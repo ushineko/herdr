@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Experimental horizontal spaces bar. `ui.sidebar_layout = "horizontal"` moves spaces out of the left rail into a one-row bar across the top of the screen, folding each space's agent status into its chip. `keys.toggle_sidebar_layout` (default `prefix+shift+b`) switches placement live, and a toggled placement is stored with the other client chrome preferences so it survives restart. Clicking a chip's folded status glyphs focuses that space's agent, or opens a picker ordered by attention when the space holds several. The bar has no collapsed form, so `keys.toggle_sidebar` is inert while it is shown; mobile-width terminals and multi-machine sessions keep their existing layouts.
+
 ## [0.9.5] - 2026-10-14
 
 This is a hotfix release for v0.9.4. See the v0.9.4 notes for the full feature release: https://github.com/herdrdev/herdr/releases/tag/v0.9.4

@@ -1895,6 +1895,23 @@ impl ClientShellState {
                     outcome,
                 );
             }
+            MouseEventKind::ScrollUp if super::contains(self.hits.spaces_bar.area, point) => {
+                let next = self.workspace_scroll.saturating_sub(1);
+                if next != self.workspace_scroll {
+                    self.workspace_scroll = next;
+                    outcome.repaint = true;
+                }
+            }
+            MouseEventKind::ScrollDown if super::contains(self.hits.spaces_bar.area, point) => {
+                let next = self
+                    .workspace_scroll
+                    .saturating_add(1)
+                    .min(self.hits.spaces_bar.max_scroll);
+                if next != self.workspace_scroll {
+                    self.workspace_scroll = next;
+                    outcome.repaint = true;
+                }
+            }
             MouseEventKind::ScrollUp if super::contains(self.hits.agent_body, point) => {
                 let next = self.agent_scroll.saturating_sub(1);
                 if next != self.agent_scroll {
@@ -2086,6 +2103,22 @@ impl ClientShellState {
                         .saturating_add(1)
                         .min(tab_count.saturating_sub(1));
                     outcome.repaint = true;
+                    return;
+                }
+                // A chip's folded status glyphs are a shortcut into the
+                // agents they stand for: one agent focuses straight through,
+                // several open a picker under the bar.
+                let status_hit = self
+                    .hits
+                    .spaces_bar
+                    .chips
+                    .iter()
+                    .find(|chip| {
+                        chip.status_rect.width > 0 && super::contains(chip.status_rect, point)
+                    })
+                    .map(|chip| (chip.index, chip.status_rect.x, chip.rect.bottom()));
+                if let Some((workspace_index, menu_x, menu_y)) = status_hit {
+                    self.open_space_agents_menu(workspace_index, menu_x, menu_y, outcome);
                     return;
                 }
                 let group_toggle = self.hits.workspaces.iter().find_map(|hit| {

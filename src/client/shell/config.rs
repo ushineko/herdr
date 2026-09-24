@@ -56,6 +56,7 @@ impl ClientShellState {
             sidebar_collapsed: self
                 .sidebar_collapsed_manual
                 .then_some(self.sidebar_collapsed),
+            sidebar_layout: self.sidebar_layout_manual.then_some(self.sidebar_layout),
             agent_panel_sort: self
                 .agent_panel_sort_manual
                 .then_some(self.config.agent_panel_sort),
@@ -85,6 +86,11 @@ impl ClientShellState {
                 }
                 if !self.sidebar_width_manual {
                     self.sidebar_width = self.config.sidebar_width;
+                }
+                // A placement the user toggled is theirs; an untouched one still
+                // follows `ui.sidebar_layout` across a reload.
+                if !self.sidebar_layout_manual {
+                    self.sidebar_layout = self.config.sidebar_layout;
                 }
                 if self.agent_panel_sort_manual {
                     self.config.agent_panel_sort = agent_panel_sort;
@@ -118,6 +124,7 @@ impl ClientShellConfig {
             sidebar_max_width: config.ui.sidebar_max_width,
             sidebar_start_collapsed: config.ui.sidebar_start_collapsed,
             sidebar_collapsed_mode: config.ui.sidebar_collapsed_mode,
+            sidebar_layout: config.ui.sidebar_layout,
             mobile_width_threshold: config.ui.mobile_width_threshold,
             tab_bar_position: config.ui.tab_bar_position,
             hide_tab_bar_when_single_tab: config.ui.hide_tab_bar_when_single_tab,
@@ -345,6 +352,7 @@ impl ClientShellConfig {
                 self.sidebar_min_width = ui.sidebar_min_width;
                 self.sidebar_max_width = ui.sidebar_max_width;
                 self.sidebar_collapsed_mode = ui.sidebar_collapsed_mode;
+                self.sidebar_layout = ui.sidebar_layout;
                 self.mobile_width_threshold = ui.mobile_width_threshold;
                 self.tab_bar_position = ui.tab_bar_position;
                 self.hide_tab_bar_when_single_tab = ui.hide_tab_bar_when_single_tab;
@@ -382,6 +390,52 @@ impl ClientShellConfig {
         diagnostics
     }
 
+    /// Experimental horizontal placement: the spaces list becomes a one-row bar
+    /// across the top of the screen, above the tab bar. There is no collapsed
+    /// form — `toggle_sidebar` is inert here, so a collapsed bar could never be
+    /// reopened.
+    fn horizontal_layout(&self, cols: u16, rows: u16, tab_count: usize) -> ClientShellLayout {
+        let bar_height = super::spaces_bar::SPACES_BAR_HEIGHT.min(rows.saturating_sub(1));
+        let main = Rect::new(0, bar_height, cols, rows.saturating_sub(bar_height));
+        let show_tab_bar =
+            main.height > 1 && !(self.hide_tab_bar_when_single_tab && tab_count == 1);
+        let tab_height = u16::from(show_tab_bar);
+        let (tab_bar, pane_surface) = match self.tab_bar_position {
+            TabBarPositionConfig::Top => (
+                Rect::new(main.x, main.y, main.width, tab_height),
+                Rect::new(
+                    main.x,
+                    main.y.saturating_add(tab_height),
+                    main.width,
+                    main.height.saturating_sub(tab_height),
+                ),
+            ),
+            TabBarPositionConfig::Bottom => (
+                Rect::new(
+                    main.x,
+                    main.y
+                        .saturating_add(main.height.saturating_sub(tab_height)),
+                    main.width,
+                    tab_height,
+                ),
+                Rect::new(
+                    main.x,
+                    main.y,
+                    main.width,
+                    main.height.saturating_sub(tab_height),
+                ),
+            ),
+        };
+
+        ClientShellLayout {
+            sidebar: Rect::default(),
+            spaces_bar: Rect::new(0, 0, cols, bar_height),
+            tab_bar,
+            mobile_header: Rect::default(),
+            pane_surface,
+        }
+    }
+
     pub(super) fn layout(
         &self,
         cols: u16,
@@ -389,15 +443,24 @@ impl ClientShellConfig {
         sidebar_collapsed: bool,
         tab_count: usize,
         sidebar_width: u16,
+        sidebar_layout: crate::config::SidebarLayoutConfig,
     ) -> ClientShellLayout {
         if cols <= self.mobile_width_threshold {
             let header_height = rows.min(2);
             return ClientShellLayout {
                 sidebar: Rect::default(),
+                spaces_bar: Rect::default(),
                 tab_bar: Rect::default(),
                 mobile_header: Rect::new(0, 0, cols, header_height),
                 pane_surface: Rect::new(0, header_height, cols, rows.saturating_sub(header_height)),
             };
+        }
+
+        if matches!(
+            sidebar_layout,
+            crate::config::SidebarLayoutConfig::Horizontal
+        ) {
+            return self.horizontal_layout(cols, rows, tab_count);
         }
 
         let sidebar_width = if sidebar_collapsed {
@@ -440,6 +503,7 @@ impl ClientShellConfig {
 
         ClientShellLayout {
             sidebar: Rect::new(0, 0, sidebar_width, rows),
+            spaces_bar: Rect::default(),
             tab_bar,
             mobile_header: Rect::default(),
             pane_surface,
@@ -459,8 +523,19 @@ impl ClientShellConfig {
             .sidebar_width
             .unwrap_or(self.sidebar_width)
             .clamp(min_width, max_width);
+        let sidebar_layout = self
+            .preferences
+            .sidebar_layout
+            .unwrap_or(self.sidebar_layout);
         let surface = self
-            .layout(cols, rows, sidebar_collapsed, 0, sidebar_width)
+            .layout(
+                cols,
+                rows,
+                sidebar_collapsed,
+                0,
+                sidebar_width,
+                sidebar_layout,
+            )
             .pane_surface;
         ClientSurfaceSize {
             cols: surface.width.max(1),

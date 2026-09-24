@@ -4,8 +4,18 @@ impl ClientContextMenuOverlay {
     pub(super) fn items(&self) -> Vec<ClientContextMenuItem> {
         use ClientContextMenuAction as Action;
 
-        let item = |label, action| ClientContextMenuItem { label, action };
+        let item = |label: &str, action| ClientContextMenuItem {
+            label: label.to_string(),
+            action,
+        };
         match &self.target {
+            ClientContextMenuTarget::SpaceAgents { agents } => agents
+                .iter()
+                .map(|agent| ClientContextMenuItem {
+                    label: format!("{}  {}", agent.title, agent.status_label),
+                    action: Action::FocusAgent,
+                })
+                .collect(),
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
                 vec![item("Rename", Action::Rename), item("Close", Action::Close)]
             }
@@ -123,6 +133,42 @@ impl ClientShellState {
         }));
     }
 
+    /// Open the spaces-bar agent picker for one chip. A single agent needs no
+    /// list — focus it directly rather than making the user pick from one row.
+    pub(super) fn open_space_agents_menu(
+        &mut self,
+        workspace_index: usize,
+        x: u16,
+        y: u16,
+        outcome: &mut ClientShellInput,
+    ) {
+        let Some(snapshot) = self.snapshot.as_deref() else {
+            return;
+        };
+        let agents =
+            super::spaces_bar::status_agents(snapshot, &self.collapsed_groups, workspace_index);
+        match agents.len() {
+            0 => {}
+            1 => {
+                self.push_endpoint_method(
+                    crate::api::schema::Method::PaneFocus(crate::api::schema::PaneTarget {
+                        pane_id: agents[0].pane_id.clone(),
+                    }),
+                    outcome,
+                );
+            }
+            _ => {
+                self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+                    target: ClientContextMenuTarget::SpaceAgents { agents },
+                    x,
+                    y,
+                    highlighted: 0,
+                }));
+            }
+        }
+        outcome.repaint = true;
+    }
+
     pub(super) fn open_tab_context_menu(&mut self, tab_id: String, x: u16, y: u16) {
         let Some(tab) = self
             .snapshot
@@ -201,6 +247,16 @@ impl ClientShellState {
                 tab_id,
                 workspace_id,
             } => self.activate_tab_context_action(tab_id, workspace_id, action, outcome),
+            ClientContextMenuTarget::SpaceAgents { agents } => {
+                if let Some(agent) = agents.get(index) {
+                    self.push_endpoint_method(
+                        crate::api::schema::Method::PaneFocus(crate::api::schema::PaneTarget {
+                            pane_id: agent.pane_id.clone(),
+                        }),
+                        outcome,
+                    );
+                }
+            }
             ClientContextMenuTarget::Pane {
                 pane_id,
                 workspace_id,

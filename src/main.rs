@@ -191,7 +191,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resize_pane_down = ""   # optional, e.g. "ctrl+shift+alt+down"
 # resize_pane_up = ""     # optional, e.g. "ctrl+shift+alt+up"
 # resize_pane_right = ""  # optional, e.g. "ctrl+shift+alt+right"
-# toggle_sidebar = "prefix+b"
+# toggle_sidebar = "prefix+b"                    # inert while the horizontal bar is shown
+# toggle_sidebar_layout = "prefix+shift+b"       # experimental; switches vertical <-> horizontal
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
@@ -249,6 +250,10 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 
 # Collapsed sidebar presentation: "compact" keeps the narrow status rail, "hidden" uses zero width.
 # sidebar_collapsed_mode = "compact"
+
+# Experimental. Sidebar placement: "vertical" is the left rail, "horizontal" moves spaces to a
+# bar across the top of the screen with agent status folded into each space.
+# sidebar_layout = "vertical"
 
 # Terminal width at or below which Herdr uses the mobile single-column layout.
 # Increase this for foldables, tablets, or wide phone terminals.

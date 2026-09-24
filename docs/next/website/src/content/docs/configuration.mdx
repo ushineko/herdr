@@ -359,6 +359,14 @@ status_indicators = "symbols"
 
 The symbols are static, so this option does not enable spinner animation.
 
+### Horizontal spaces bar (experimental)
+
+`ui.sidebar_layout = "horizontal"` is an experimental placement that moves spaces out of the left rail and into a bar across the top of the screen, above the tab bar, separated from it by a horizontal rule. Each space becomes a chip carrying its number, rolled-up status icon, name, and a folded agent summary such as `◐2 ×1` — one glyph per agent status, with a count when more than one agent shares that status. Clicking a chip switches space; clicking its status glyphs jumps straight to that space's agent, or opens a picker ordered by attention when the space holds several. The strip scrolls with the mouse wheel and keeps the focused space fully visible.
+
+The horizontal bar trades away the parts of the rail that need vertical room: there is no separate Agent panel, no width or section drag handles, no collapse chevron, and no drag-to-reorder. The bar has no collapsed form either, so `keys.toggle_sidebar` does nothing while it is shown and changes no hidden state; it still collapses the vertical rail. Terminals at or below `ui.mobile_width_threshold` keep the mobile layout regardless of this setting, and attaching a second machine falls back to the vertical rail, which is the only placement with a machine list.
+
+`keys.toggle_sidebar_layout` switches placement live without editing the config. It defaults to `prefix+shift+b`, the shift variant of `keys.toggle_sidebar`. A placement toggled by keybinding is client-owned: it is stored beside the sidebar width and collapse state and survives restart, so editing `ui.sidebar_layout` afterwards has no effect until the toggle is used again.
+
 ### Sidebar row layouts
 
 The expanded desktop sidebar renders each inner array in `rows` as one line. These are the complete default layouts:
