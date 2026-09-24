@@ -4,6 +4,7 @@
 
 ### Added
 - Experimental horizontal spaces bar. `ui.sidebar_layout = "horizontal"` moves spaces out of the left rail into a one-row bar across the top of the screen, folding each space's agent status into its chip. `keys.toggle_sidebar_layout` (default `prefix+shift+b`) switches placement live, and a toggled placement is stored with the other client chrome preferences so it survives restart. Clicking a chip's folded status glyphs focuses that space's agent, or opens a picker ordered by attention when the space holds several. The bar has no collapsed form, so `keys.toggle_sidebar` is inert while it is shown; mobile-width terminals and multi-machine sessions keep their existing layouts.
+- The horizontal spaces bar has `<` and `>` scroll buttons at each end when the space chips overflow its width, and a manual scroll (buttons or mouse wheel) now holds until the focused space changes instead of snapping back on the next redraw.
 
 ## [0.9.5] - 2026-10-14
 

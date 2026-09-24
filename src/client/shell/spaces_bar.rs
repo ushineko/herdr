@@ -32,6 +32,12 @@ const MENU_BADGE_WIDTH: u16 = 8;
 const MAX_LABEL_WIDTH: usize = 18;
 /// One blank column between chips.
 const CHIP_GAP: u16 = 1;
+/// Width of each `<` / `>` scroll hotspot, matching the tab bar's buttons.
+const SCROLL_BUTTON_WIDTH: u16 = 3;
+/// Narrowest chip strip that still has room for two scroll buttons and a chip
+/// between them. Below this the buttons would crowd out what they scroll, so
+/// the bar falls back to the non-interactive overflow ellipsis.
+const MIN_SCROLLABLE_STRIP_WIDTH: u16 = SCROLL_BUTTON_WIDTH * 2 + 3;
 
 /// A rendered space entry in the bar, plus the sub-rect of its status rollup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +63,10 @@ pub(super) struct SpacesBarView {
     pub(super) menu_rect: Rect,
     pub(super) overflow_left: bool,
     pub(super) overflow_right: bool,
+    /// `<` hotspot, empty when the chips fit or mouse chrome is off.
+    pub(super) scroll_left_rect: Rect,
+    /// `>` hotspot, empty when the chips fit or mouse chrome is off.
+    pub(super) scroll_right_rect: Rect,
 }
 
 /// A folded agent status rollup: one glyph per status class, with counts.
@@ -428,9 +438,31 @@ fn max_scroll_for(
         .unwrap_or(entries.len().saturating_sub(1))
 }
 
-/// Resolve the chip strip for `area`. `focus_index` is the entry the strip
-/// scrolls to reveal — the navigate-mode selection when navigating, otherwise
-/// the focused space.
+/// Whether the chips need more room than `area` gives them.
+///
+/// Defined against the *unreserved* strip, so the answer does not depend on the
+/// buttons it decides. Reserving the buttons only ever narrows the strip, which
+/// cannot turn an overflowing bar back into a fitting one — so this settles in
+/// one pass rather than oscillating.
+fn chips_overflow(
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    collapsed_groups: &HashSet<String>,
+    entries: &[WorkspaceEntry],
+    area: Rect,
+) -> bool {
+    !layout_chips(snapshot, config, collapsed_groups, entries, area, 0)
+        .last()
+        .is_some_and(|chip| chip.full)
+}
+
+/// Resolve the chip strip for `area`.
+///
+/// When `reveal` is set the strip scrolls to show `focus_index` — the
+/// navigate-mode selection when navigating, otherwise the focused space.
+/// Otherwise `workspace_scroll` is kept as the user left it, only clamped to
+/// the layout: revealing on every frame would undo each wheel notch and button
+/// click on the very next render.
 pub(super) fn compute_spaces_bar_view(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
@@ -438,6 +470,7 @@ pub(super) fn compute_spaces_bar_view(
     area: Rect,
     focus_index: Option<usize>,
     workspace_scroll: usize,
+    reveal: bool,
 ) -> SpacesBarView {
     if area.width == 0 || area.height == 0 {
         return SpacesBarView::default();
@@ -454,19 +487,50 @@ pub(super) fn compute_spaces_bar_view(
         };
     }
 
-    let focus_entry = focus_index
-        .and_then(|index| entries.iter().position(|entry| entry.index == index))
-        .unwrap_or(0);
+    // Scroll buttons are only worth their columns once the chips actually
+    // overflow, and only when clicks can reach them at all.
+    let scrollable = config.mouse_capture
+        && chip_area.width >= MIN_SCROLLABLE_STRIP_WIDTH
+        && chips_overflow(snapshot, config, collapsed_groups, &entries, chip_area);
+    let (scroll_left_rect, scroll_right_rect, chip_area) = if scrollable {
+        (
+            Rect::new(chip_area.x, chip_area.y, SCROLL_BUTTON_WIDTH, 1),
+            Rect::new(
+                chip_area.right() - SCROLL_BUTTON_WIDTH,
+                chip_area.y,
+                SCROLL_BUTTON_WIDTH,
+                1,
+            ),
+            Rect::new(
+                chip_area.x + SCROLL_BUTTON_WIDTH,
+                chip_area.y,
+                chip_area.width - SCROLL_BUTTON_WIDTH * 2,
+                chip_area.height,
+            ),
+        )
+    } else {
+        (Rect::default(), Rect::default(), chip_area)
+    };
+
     let max_scroll = max_scroll_for(snapshot, config, collapsed_groups, &entries, chip_area);
-    let scroll = scroll_revealing(
-        snapshot,
-        config,
-        collapsed_groups,
-        &entries,
-        chip_area,
-        focus_entry,
-        workspace_scroll.min(max_scroll),
-    );
+    let scroll = if reveal {
+        let focus_entry = focus_index
+            .and_then(|index| entries.iter().position(|entry| entry.index == index))
+            .unwrap_or(0);
+        // Re-resolve from the left so the strip settles on the smallest scroll
+        // that shows the focused chip, rather than ratcheting ever rightwards.
+        scroll_revealing(
+            snapshot,
+            config,
+            collapsed_groups,
+            &entries,
+            chip_area,
+            focus_entry,
+            0,
+        )
+    } else {
+        workspace_scroll.min(max_scroll)
+    };
 
     let chips = layout_chips(
         snapshot,
@@ -486,6 +550,26 @@ pub(super) fn compute_spaces_bar_view(
         chips,
         new_rect,
         menu_rect,
+        scroll_left_rect,
+        scroll_right_rect,
+    }
+}
+
+impl ClientShellState {
+    /// Move the strip one chip left or right. The wheel and the `<`/`>` buttons
+    /// both land here, so they share the clamp against the last full chip.
+    pub(super) fn scroll_spaces_bar(&mut self, forward: bool, outcome: &mut ClientShellInput) {
+        let next = if forward {
+            self.workspace_scroll
+                .saturating_add(1)
+                .min(self.hits.spaces_bar.max_scroll)
+        } else {
+            self.workspace_scroll.saturating_sub(1)
+        };
+        if next != self.workspace_scroll {
+            self.workspace_scroll = next;
+            outcome.repaint = true;
+        }
     }
 }
 
@@ -648,11 +732,6 @@ pub(super) fn render_spaces_bar(
     // re-trigger a reveal on the next frame, or strand it for the vertical rail.
     let reveal_focused = std::mem::take(state.reveal_focused_workspace);
     let reveal_navigation = std::mem::take(state.reveal_navigation_workspace);
-    if reveal_focused || reveal_navigation {
-        // Re-resolve from the left so the strip settles on the smallest scroll
-        // that shows the focused chip, rather than ratcheting ever rightwards.
-        *state.workspace_scroll = 0;
-    }
 
     let view = compute_spaces_bar_view(
         snapshot,
@@ -661,6 +740,7 @@ pub(super) fn render_spaces_bar(
         area,
         focus_index,
         *state.workspace_scroll,
+        reveal_focused || reveal_navigation,
     );
     *state.workspace_scroll = view.scroll;
 
@@ -800,18 +880,38 @@ pub(super) fn render_spaces_bar(
         }
     }
 
-    let (_, _, chip_area) = bar_sections(snapshot, config, area);
-    if chip_area.width > 0 {
-        let overflow_style = Style::default().fg(palette.overlay0);
-        if view.overflow_left {
-            if let Some(cell) = buffer.cell_mut((chip_area.x, chip_area.y)) {
-                cell.set_symbol("…").set_style(overflow_style);
-            }
+    if view.scroll_left_rect.width > 0 {
+        // Enabled/disabled colouring matches the tab bar's scroll buttons, so
+        // "dimmer means you are already at the end" reads the same in both bars.
+        let arrow = |can_scroll: bool| {
+            Style::default().fg(if can_scroll {
+                palette.overlay1
+            } else {
+                palette.overlay0
+            })
+        };
+        for (rect, glyph, can_scroll) in [
+            (view.scroll_left_rect, " < ", view.overflow_left),
+            (view.scroll_right_rect, " > ", view.overflow_right),
+        ] {
+            put_text(buffer, rect.x, rect.y, rect.width, glyph, arrow(can_scroll));
         }
-        if view.overflow_right {
-            let x = chip_area.x + chip_area.width.saturating_sub(1);
-            if let Some(cell) = buffer.cell_mut((x, chip_area.y)) {
-                cell.set_symbol("…").set_style(overflow_style);
+    } else {
+        // No buttons (mouse chrome off, or too narrow for them): fall back to a
+        // static hint so hidden chips are still discoverable.
+        let (_, _, chip_area) = bar_sections(snapshot, config, area);
+        if chip_area.width > 0 {
+            let overflow_style = Style::default().fg(palette.overlay0);
+            if view.overflow_left {
+                if let Some(cell) = buffer.cell_mut((chip_area.x, chip_area.y)) {
+                    cell.set_symbol("…").set_style(overflow_style);
+                }
+            }
+            if view.overflow_right {
+                let x = chip_area.x + chip_area.width.saturating_sub(1);
+                if let Some(cell) = buffer.cell_mut((x, chip_area.y)) {
+                    cell.set_symbol("…").set_style(overflow_style);
+                }
             }
         }
     }

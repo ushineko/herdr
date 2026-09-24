@@ -1896,21 +1896,10 @@ impl ClientShellState {
                 );
             }
             MouseEventKind::ScrollUp if super::contains(self.hits.spaces_bar.area, point) => {
-                let next = self.workspace_scroll.saturating_sub(1);
-                if next != self.workspace_scroll {
-                    self.workspace_scroll = next;
-                    outcome.repaint = true;
-                }
+                self.scroll_spaces_bar(false, outcome);
             }
             MouseEventKind::ScrollDown if super::contains(self.hits.spaces_bar.area, point) => {
-                let next = self
-                    .workspace_scroll
-                    .saturating_add(1)
-                    .min(self.hits.spaces_bar.max_scroll);
-                if next != self.workspace_scroll {
-                    self.workspace_scroll = next;
-                    outcome.repaint = true;
-                }
+                self.scroll_spaces_bar(true, outcome);
             }
             MouseEventKind::ScrollUp if super::contains(self.hits.agent_body, point) => {
                 let next = self.agent_scroll.saturating_sub(1);
@@ -2103,6 +2092,16 @@ impl ClientShellState {
                         .saturating_add(1)
                         .min(tab_count.saturating_sub(1));
                     outcome.repaint = true;
+                    return;
+                }
+                // Scroll buttons act on press, like the tab bar's, and move the
+                // same offset as the wheel.
+                if super::contains(self.hits.spaces_bar.scroll_left_rect, point) {
+                    self.scroll_spaces_bar(false, outcome);
+                    return;
+                }
+                if super::contains(self.hits.spaces_bar.scroll_right_rect, point) {
+                    self.scroll_spaces_bar(true, outcome);
                     return;
                 }
                 // A chip's folded status glyphs are a shortcut into the
