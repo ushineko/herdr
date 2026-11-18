@@ -26,6 +26,36 @@ pub struct SessionSnapshot {
     pub sidebar_section_split: Option<f32>,
     #[serde(default)]
     pub collapsed_space_keys: std::collections::HashSet<String>,
+    /// Local patch: the dock (spec 001). Optional, and the snapshot version is
+    /// not bumped, so stock herdr loads these files and drops the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dock: Option<Box<DockSnapshot>>,
+}
+
+/// Saved dock. `layout: None` is a dock the user closed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DockSnapshot {
+    pub rows: u16,
+    #[serde(default)]
+    pub rows_manual: bool,
+    #[serde(default)]
+    pub layout: Option<LayoutSnapshot>,
+    #[serde(default)]
+    pub panes: HashMap<u32, DockPaneSnapshot>,
+    #[serde(default)]
+    pub focused: Option<u32>,
+    #[serde(default)]
+    pub zoomed: bool,
+}
+
+/// One saved dock pane. `label` and `command` together mark a seeded pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockPaneSnapshot {
+    pub cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,7 +165,7 @@ pub struct PaneHistorySnapshot {
 }
 
 /// Serializable BSP tree.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LayoutSnapshot {
     Pane(u32),
     Split {
@@ -146,7 +176,7 @@ pub enum LayoutSnapshot {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DirectionSnapshot {
     Horizontal,
     Vertical,
@@ -195,6 +225,10 @@ struct RawSessionSnapshot {
     sidebar_section_split: Option<f32>,
     #[serde(default)]
     collapsed_space_keys: std::collections::HashSet<String>,
+    /// Parsed leniently: a dock the code cannot read is dropped with a
+    /// warning instead of failing the whole session restore.
+    #[serde(default)]
+    dock: Option<serde_json::Value>,
 }
 
 fn migrate_snapshot(raw: RawSessionSnapshot) -> Result<SessionSnapshot, String> {
@@ -210,6 +244,11 @@ fn migrate_snapshot(raw: RawSessionSnapshot) -> Result<SessionSnapshot, String> 
         sidebar_width: raw.sidebar_width,
         sidebar_section_split: raw.sidebar_section_split,
         collapsed_space_keys: raw.collapsed_space_keys,
+        dock: raw.dock.and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|err| tracing::warn!(%err, "ignoring unreadable saved dock"))
+                .ok()
+        }),
     })
 }
 
@@ -281,6 +320,7 @@ pub fn capture(
         sidebar_width: None,
         sidebar_section_split: None,
         collapsed_space_keys: std::collections::HashSet::new(),
+        dock: None,
     }
 }
 
@@ -526,6 +566,68 @@ mod tests {
     use crate::layout::NavDirection;
     use crate::workspace::Workspace;
 
+    fn dock_session_json(dock: &str) -> String {
+        format!(
+            r#"{{"version":3,"workspaces":[{{"identity_cwd":"/tmp","tabs":[{{"layout":{{"Pane":1}},"panes":{{"1":{{"cwd":"/tmp"}}}},"zoomed":false}}],"active_tab":0}}],"active":0,"selected":0{dock}}}"#
+        )
+    }
+
+    #[test]
+    fn a_saved_dock_round_trips_and_keeps_the_snapshot_version() {
+        let dock = DockSnapshot {
+            rows: 4,
+            rows_manual: true,
+            layout: Some(LayoutSnapshot::Split {
+                direction: DirectionSnapshot::Horizontal,
+                ratio: 0.75,
+                first: Box::new(LayoutSnapshot::Pane(7)),
+                second: Box::new(LayoutSnapshot::Pane(8)),
+            }),
+            panes: HashMap::from([
+                (
+                    7,
+                    DockPaneSnapshot {
+                        cwd: PathBuf::from("/home"),
+                        label: Some("usage".into()),
+                        command: Some("hayami-tui".into()),
+                    },
+                ),
+                (
+                    8,
+                    DockPaneSnapshot {
+                        cwd: PathBuf::from("/tmp"),
+                        label: None,
+                        command: None,
+                    },
+                ),
+            ]),
+            focused: Some(8),
+            zoomed: false,
+        };
+        let json = dock_session_json(&format!(
+            ",\"dock\":{}",
+            serde_json::to_string(&dock).unwrap()
+        ));
+        let parsed = parse_snapshot(&json).expect("a session with a dock parses");
+        assert_eq!(parsed.dock.as_deref(), Some(&dock));
+        assert_eq!(
+            SNAPSHOT_VERSION, 3,
+            "the dock must not bump the snapshot version"
+        );
+    }
+
+    #[test]
+    fn sessions_without_a_dock_or_with_an_unreadable_one_still_restore() {
+        let stock = parse_snapshot(&dock_session_json("")).expect("stock session parses");
+        assert!(stock.dock.is_none());
+        assert_eq!(stock.workspaces.len(), 1);
+
+        let broken = parse_snapshot(&dock_session_json(r#","dock":{"rows":"tall"}"#))
+            .expect("an unreadable dock does not fail the restore");
+        assert!(broken.dock.is_none());
+        assert_eq!(broken.workspaces.len(), 1);
+    }
+
     fn session_fixture(name: &str) -> &'static str {
         match name {
             "current-herdr" => {
@@ -663,6 +765,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            dock: None,
         };
         let json = serde_json::to_string(&snap).unwrap();
         let restored = parse_snapshot(&json).unwrap();
@@ -752,6 +855,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            dock: None,
             version: SNAPSHOT_VERSION,
         };
 
@@ -1453,6 +1557,7 @@ mod tests {
             sidebar_width: Some(26),
             sidebar_section_split: Some(0.5),
             collapsed_space_keys: std::collections::HashSet::new(),
+            dock: None,
         };
 
         let json = serde_json::to_string(&snap).unwrap();

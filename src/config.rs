@@ -11,6 +11,8 @@ mod theme;
 mod window_title;
 mod write;
 
+#[cfg(test)]
+pub(crate) use self::dock::DockPaneConfig;
 pub use self::{
     dock::DockConfig,
     io::{

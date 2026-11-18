@@ -81,8 +81,6 @@ impl DockConfig {
 
     /// The seed to build a dock from: `None` when no panes are configured or
     /// the config is invalid, so a broken seed never produces a half-built dock.
-    // Consumed by the server-side dock (part 2); remove the allow there.
-    #[allow(dead_code)]
     pub fn seed(&self) -> Option<&Self> {
         (!self.panes.is_empty() && self.diagnostics().is_empty()).then_some(self)
     }

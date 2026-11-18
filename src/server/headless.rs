@@ -620,6 +620,7 @@ impl HeadlessServer {
                 .pending_alt_screen_reads
                 .iter()
                 .map(|pending| pending.next_deadline())
+                .chain(self.app.next_dock_deadline())
                 .fold(next_deadline, |deadline, pending| {
                     Some(deadline.map_or(pending, |current| current.min(pending)))
                 });
@@ -3280,6 +3281,10 @@ impl HeadlessServer {
 
         // No resize polling needed — server has no terminal.
         // Client resize messages drive size changes instead.
+
+        if self.app.run_due_dock_respawns(now) {
+            changed = true;
+        }
 
         if self
             .app

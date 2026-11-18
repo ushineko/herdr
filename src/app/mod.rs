@@ -17,6 +17,7 @@ mod api_helpers;
 pub(crate) use api_helpers::limit_snapshot_lines;
 mod creation;
 mod custom_commands;
+pub(crate) mod dock;
 mod git_refresh;
 mod ids;
 mod popup;
@@ -402,6 +403,7 @@ impl App {
         let mut restored_terminals = std::collections::HashMap::new();
         let mut restored_terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
         let snapshot = policy.restore_session.then(crate::persist::load).flatten();
+        let saved_dock = snapshot.as_ref().and_then(|snapshot| snapshot.dock.clone());
         let mut plugin_installation_leases = crate::plugin_installations::Leases::new();
         let mut plugin_installation_cleanup_allowed = true;
         if policy.persist_plugin_registry {
@@ -568,6 +570,7 @@ impl App {
             ),
             plugin_panes: std::collections::HashMap::new(),
             popup_pane: None,
+            dock: Default::default(),
             plugin_command_logs: Vec::new(),
             next_plugin_command_log_id: 1,
             plugin_commands_in_flight: 0,
@@ -683,6 +686,11 @@ impl App {
         app.configure_tab_bar_status(&config.ui.tab_bar_right, &config.ui.tab_bar_right_separator);
         app.configure_window_title(&config.ui.window_title);
         app.refresh_restored_workspace_git_metadata();
+        // Only a session-restoring start builds the dock: tests stay
+        // process-free, and handoff restores the dock from its own snapshot.
+        if policy.restore_session {
+            app.init_dock(&config.ui.dock, saved_dock.as_deref());
+        }
         Ok(app)
     }
 
@@ -746,6 +754,8 @@ impl App {
                 .and_then(|ws| ws.focused_pane_id().map(|pane_id| (idx, pane_id)))
         });
         app.refresh_restored_workspace_git_metadata();
+        // Dock processes are not handed over; they restart from the snapshot.
+        app.init_dock(&config.ui.dock, snapshot.dock.as_deref());
         Ok(app)
     }
 
@@ -917,6 +927,7 @@ impl App {
                 self.state.sidebar_spaces = config.ui.sidebar.spaces.clone();
                 self.state.sound = config.ui.sound.clone();
                 self.state.toast_config = config.ui.toast.clone();
+                self.apply_dock_seed(&config.ui.dock);
             }
         }
 
