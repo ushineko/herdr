@@ -900,10 +900,34 @@
           ]
         },
         {
+          "key": "keys.focus_dock",
+          "type": "keybinding",
+          "default": "\"prefix+u\"",
+          "description": "Local patch. Move keyboard focus into the dock and back."
+        },
+        {
+          "key": "keys.toggle_dock",
+          "type": "keybinding",
+          "default": "\"prefix+shift+u\"",
+          "description": "Local patch. Show or hide the dock on this client. The choice is saved per client."
+        },
+        {
+          "key": "keys.reset_dock",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Local patch. Rebuild the dock from ui.dock, discarding runtime splits and sizes."
+        },
+        {
           "key": "keys.toggle_sidebar_layout",
           "type": "string",
           "default": "prefix+shift+b",
           "description": "Experimental. Switches between vertical and horizontal sidebar placement. The shift variant of keys.toggle_sidebar."
+        },
+        {
+          "key": "ui.dock.rows",
+          "type": "integer",
+          "default": "3",
+          "description": "Local patch. Height in content rows of a dock built from config. Splits and sizes changed at runtime are saved and take precedence."
         },
         {
           "key": "ui.sidebar_layout",

@@ -4,9 +4,9 @@ use crossterm::event::KeyModifiers;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 use super::{
-    ActionKeybinds, BindingConfig, CommandKeybindConfig, IndexedKeybind, Keybinds, SidebarConfig,
-    SoundConfig, TabBarRightEntryConfig, ThemeConfig, DEFAULT_MOBILE_WIDTH_THRESHOLD,
-    DEFAULT_MOUSE_SCROLL_LINES, DEFAULT_SCROLLBACK_LIMIT_BYTES,
+    ActionKeybinds, BindingConfig, CommandKeybindConfig, DockConfig, IndexedKeybind, Keybinds,
+    SidebarConfig, SoundConfig, TabBarRightEntryConfig, ThemeConfig,
+    DEFAULT_MOBILE_WIDTH_THRESHOLD, DEFAULT_MOUSE_SCROLL_LINES, DEFAULT_SCROLLBACK_LIMIT_BYTES,
 };
 
 pub const MAX_TOAST_DELAY_SECONDS: u64 = 3600;
@@ -466,6 +466,12 @@ pub struct KeysConfig {
     pub resize_pane_right: BindingConfig,
     /// Toggle sidebar collapse. Default: "prefix+b"
     pub toggle_sidebar: BindingConfig,
+    /// Local patch: move keyboard focus into the dock and back. Default: "prefix+u"
+    pub focus_dock: BindingConfig,
+    /// Local patch: show or hide the dock on this client. Default: "prefix+shift+u"
+    pub toggle_dock: BindingConfig,
+    /// Local patch: rebuild the dock from `[ui.dock]`. Unbound by default.
+    pub reset_dock: BindingConfig,
     /// Experimental: switch between vertical and horizontal sidebar placement.
     /// Default: "prefix+shift+b" — the shift variant of `toggle_sidebar`, which
     /// collapses the sidebar on "prefix+b".
@@ -609,6 +615,12 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     toggle_sidebar_layout: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    focus_dock: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    toggle_dock: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reset_dock: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -721,6 +733,9 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(resize_pane_right);
         apply_field!(toggle_sidebar);
         apply_field!(toggle_sidebar_layout);
+        apply_field!(focus_dock);
+        apply_field!(toggle_dock);
+        apply_field!(reset_dock);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -827,6 +842,9 @@ impl KeysConfig {
         copy_effective_action_field!(resize_pane_right, keybinds.resize_pane_right);
         copy_effective_action_field!(toggle_sidebar, keybinds.toggle_sidebar);
         copy_effective_action_field!(toggle_sidebar_layout, keybinds.toggle_sidebar_layout);
+        copy_effective_action_field!(focus_dock, keybinds.focus_dock);
+        copy_effective_action_field!(toggle_dock, keybinds.toggle_dock);
+        copy_effective_action_field!(reset_dock, keybinds.reset_dock);
         copy_user_field!(indexed);
 
         profile
@@ -1028,6 +1046,8 @@ pub struct UiConfig {
     pub toast: ToastConfig,
     /// Play sounds when agents change state in background workspaces.
     pub sound: SoundConfig,
+    /// Local patch: seed for the dock, a pane area at the bottom of the screen.
+    pub dock: DockConfig,
 }
 
 /// Cursor shape (DECSCUSR) used for the forced IME anchor.
@@ -1202,6 +1222,9 @@ impl Default for KeysConfig {
             resize_pane_right: BindingConfig::empty(),
             toggle_sidebar: BindingConfig::one("prefix+b"),
             toggle_sidebar_layout: BindingConfig::one("prefix+shift+b"),
+            focus_dock: BindingConfig::one("prefix+u"),
+            toggle_dock: BindingConfig::one("prefix+shift+u"),
+            reset_dock: BindingConfig::empty(),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),
@@ -1253,6 +1276,7 @@ impl Default for UiConfig {
             accent: "cyan".into(),
             toast: ToastConfig::default(),
             sound: SoundConfig::default(),
+            dock: DockConfig::default(),
         }
     }
 }

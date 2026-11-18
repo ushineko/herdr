@@ -62,6 +62,9 @@ pub(crate) enum KeybindAction {
     ResizePaneRight,
     ToggleSidebar,
     ToggleSidebarLayout,
+    FocusDock,
+    ToggleDock,
+    ResetDock,
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
@@ -152,6 +155,9 @@ pub(crate) fn resolve_non_indexed_action(
             &keybinds.toggle_sidebar_layout,
             KeybindAction::ToggleSidebarLayout,
         ),
+        (&keybinds.focus_dock, KeybindAction::FocusDock),
+        (&keybinds.toggle_dock, KeybindAction::ToggleDock),
+        (&keybinds.reset_dock, KeybindAction::ResetDock),
         (&keybinds.reload_config, KeybindAction::ReloadConfig),
         (
             &keybinds.open_notification_target,
@@ -264,6 +270,46 @@ mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     use super::*;
+
+    #[test]
+    fn dock_keys_are_bound_by_default_without_conflicts() {
+        let config = crate::config::Config::default();
+        assert!(
+            config.collect_diagnostics().is_empty(),
+            "default keymap produced diagnostics: {:?}",
+            config.collect_diagnostics()
+        );
+        let keybinds = config.keybinds();
+        assert!(matches!(
+            resolve_prefix_binding(
+                &keybinds,
+                &TerminalKey::new(KeyCode::Char('u'), KeyModifiers::empty())
+            ),
+            Some(KeybindMatch::Action(KeybindAction::FocusDock))
+        ));
+        assert!(matches!(
+            resolve_prefix_binding(
+                &keybinds,
+                &TerminalKey::new(KeyCode::Char('U'), KeyModifiers::SHIFT)
+            ),
+            Some(KeybindMatch::Action(KeybindAction::ToggleDock))
+        ));
+        assert!(
+            keybinds.reset_dock.bindings.is_empty(),
+            "reset_dock is unbound by default"
+        );
+
+        let config: crate::config::Config =
+            toml::from_str("[keys]\nreset_dock = \"prefix+alt+u\"\n").unwrap();
+        assert!(config.collect_diagnostics().is_empty());
+        assert!(matches!(
+            resolve_prefix_binding(
+                &config.keybinds(),
+                &TerminalKey::new(KeyCode::Char('u'), KeyModifiers::ALT)
+            ),
+            Some(KeybindMatch::Action(KeybindAction::ResetDock))
+        ));
+    }
 
     #[test]
     fn clear_pane_is_unbound_by_default_and_configurable() {

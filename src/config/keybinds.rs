@@ -404,6 +404,9 @@ pub struct Keybinds {
     pub resize_pane_right: ActionKeybinds,
     pub toggle_sidebar: ActionKeybinds,
     pub toggle_sidebar_layout: ActionKeybinds,
+    pub focus_dock: ActionKeybinds,
+    pub toggle_dock: ActionKeybinds,
+    pub reset_dock: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
 }
 
@@ -588,6 +591,9 @@ impl Config {
             resize_pane_right: empty_action!(),
             toggle_sidebar: empty_action!(),
             toggle_sidebar_layout: empty_action!(),
+            focus_dock: empty_action!(),
+            toggle_dock: empty_action!(),
+            reset_dock: empty_action!(),
             custom_commands: Vec::new(),
         };
 
@@ -741,6 +747,9 @@ impl Config {
                 toggle_sidebar_layout,
                 source
             );
+            apply_action!(keybinds.focus_dock, focus_dock, source);
+            apply_action!(keybinds.toggle_dock, toggle_dock, source);
+            apply_action!(keybinds.reset_dock, reset_dock, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(
