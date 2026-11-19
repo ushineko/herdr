@@ -314,15 +314,19 @@ in the audit.
       findings.)
 
 ### Model and lifecycle
-- [ ] `stack_new_pane` adds a shell (default shell, cwd of the focused pane)
+- [x] `stack_new_pane` adds a shell (default shell, cwd of the focused pane)
       as the last member of the focused slot's stack and shows it. The rest of
-      the layout (rects of every other pane) is unchanged.
-- [ ] Switching changes only the slot's visible pane. Hidden panes keep
+      the layout (rects of every other pane) is unchanged. (`stacking_a_pane_leaves_every_slot_in_place`, `the_new_control_starts_a_shell_in_the_focused_slot`; cwd checked end to end in `stacked_panes_keep_their_own_output_and_are_listed_and_driven_while_hidden`; E2E step 1.)
+- [x] Switching changes only the slot's visible pane. Hidden panes keep
       running, are sized to the slot's content rect, and keep their
-      scrollback.
-- [ ] Closing or exiting the visible pane shows its neighbour. When one pane
-      is left, the slot is a plain pane and draws no strip.
-- [ ] Split, swap, move-to-tab and zoom act on the whole slot.
+      scrollback. (`switching_changes_only_the_slot_and_keeps_order`, `hidden_members_are_sized_like_the_visible_one`, `computing_the_active_tab_with_resize_sizes_hidden_members_like_the_visible_one`; output kept across a switch in the integration test and E2E step 2.)
+- [x] Closing or exiting the visible pane shows its neighbour. When one pane
+      is left, the slot is a plain pane and draws no strip. (`closing_the_visible_member_shows_its_neighbour_then_collapses`, `closing_the_last_visible_member_shows_the_previous_one`; E2E step 4.)
+- [ ] Split, swap, move-to-tab and zoom act on the whole slot. Split, swap and zoom do
+      (`swap_and_zoom_act_on_the_whole_slot`; a split keeps the stack on its
+      leaf). **Open:** `pane move` moves only the named pane, its slot passing
+      to the next member (part 1); moving a whole slot is not built. Needs a
+      decision: build it, or amend this criterion.
 - [x] Focusing a hidden pane from Go To, an agent-list jump, a notification
       or `herdr pane focus` makes it visible first. (Part 3: `focus_pane_in_workspace` shows it; `focusing_a_hidden_member_shows_it`.)
 - [x] Hidden panes appear in agent lists, Go To and notifications, like any
@@ -341,8 +345,8 @@ in the audit.
       each close, move and death path). (Part 1:
       `a_member_of_a_one_slot_stack_is_not_the_last_pane`,
       `closing_a_member_of_a_one_slot_stack_needs_no_workspace_confirmation`.)
-- [ ] Live handoff between two patched builds carries stacks: same members,
-      visible pane and processes (integration test).
+- [x] Live handoff between two patched builds carries stacks: same members,
+      visible pane and processes (integration test). (`a_live_handoff_carries_a_stack_and_its_hidden_process`; fails when hidden members are not restored.)
 - [x] The workspace and app invariant checks are extended for stacks, and
       pass in every existing test, the new ones, and against the adversarial
       identity fixtures extended with stacks. (Part 1:
@@ -355,17 +359,17 @@ in the audit.
 - [x] `pane read`, `pane process-info` and `pane run` work on a hidden pane. (Part 3: they address panes by id, not geometry; `a_hidden_member_can_be_read_without_being_shown`. `pane run` is checked end to end in part 5.)
 
 ### Strip and input
-- [ ] A slot with two or more panes draws a one-row strip at its top: labels
+- [x] A slot with two or more panes draws a one-row strip at its top: labels
       (pane label, else agent, else process), the visible pane highlighted, a
       blocked or done hidden agent shown by its glyph. A single pane is drawn
-      exactly as before.
+      exactly as before. (`a_stack_draws_its_strip_and_only_its_visible_member`, `a_blocked_agent_in_a_hidden_member_shows_its_glyph_in_the_strip`; stack-free rendering is unchanged, every upstream render test passes; E2E steps 1–2. The label falls back to the terminal title, then "shell", rather than a process name.)
 - [x] Clicking a strip entry, `stack_next` / `stack_previous`, and the wheel
       over the strip switch panes in that slot and focus the new one. (Part 4: `clicks_and_the_wheel_over_a_strip_switch_the_stack`, `stack_keys_send_new_and_cycle_for_the_focused_pane`; the server side in part 3.)
 - [x] `keys.stack_new_pane`, `keys.stack_next` and `keys.stack_previous`
       exist, and the shipped defaults produce no keymap diagnostics. (Part 4: `pane_stack_keys_have_conflict_free_defaults`.)
-- [ ] A stock client connected to a patched server renders the strip and
+- [x] A stock client connected to a patched server renders the strip and
       works; a patched client against a stock server shows no pane-stack
-      controls.
+      controls. (E2E step 5 with a stock v0.9.5 release build in both directions; `a_server_without_pane_stacks_gets_no_stack_controls`.)
 - [x] Unknown pane-stack operations and malformed controls are ignored by the
       server (serde `Unknown` fallbacks, tested). (Part 3: `pane_stack_controls_round_trip_and_unknown_ops_decode_as_unknown`, `show_and_cycle_controls_switch_the_slot_and_unknown_ones_are_ignored`.)
 
@@ -374,12 +378,15 @@ in the audit.
       for workspace stacks and dock stacks alike. (Part 3, workspace stacks: `hidden_member_output_takes_the_hidden_source_early_exit`. Dock stacks: part 5.)
 - [ ] `just bench-render-scale` with 1 and 15 populated panes, some of them
       hidden in stacks, compared with `ushineko/dock`; the delta is recorded
-      here.
+      here. Recorded under Part 5 below for
+      stack-free scenes. **Open:** upstream's benchmark has no stacked scenes,
+      so the "some hidden" half is covered only by the early-exit tests, not
+      measured.
 
 ### Dock
-- [ ] Stacks work in dock slots: `stack_new_pane` with the dock focused adds a
+- [x] Stacks work in dock slots: `stack_new_pane` with the dock focused adds a
       pane to the focused dock slot's stack, and the dock's saved layout keeps
-      them.
+      them. (Part 5: `a_dock_stack_keeps_its_slot_and_draws_a_strip_row`, `dock_stacks_cycle_focus_and_hand_the_slot_on_when_closed`, `dock_stacks_are_saved_restored_and_their_hidden_members_started`, `dock_stacks_are_drawn_and_driven_by_dock_controls`, `stack_keys_with_the_dock_focused_act_on_the_dock`, `a_click_on_a_dock_strip_shows_that_member`.)
 
 ### Persistence
 - [x] A session with stacks saves and restores with the same members, order,
@@ -396,18 +403,18 @@ in the audit.
       `a_stack_whose_visible_member_failed_hands_its_leaf_to_a_survivor`.)
 
 ### Docs
-- [ ] `configuration.mdx` documents the keys and behaviour (English, with the
+- [x] `configuration.mdx` documents the keys and behaviour (English, with the
       Japanese and Simplified Chinese pages kept in heading parity), and
       `config-reference.json` lists the new keys
       (`scripts/test_config_reference_check.py` and
-      `scripts/docs_translation_parity.py` pass).
+      `scripts/docs_translation_parity.py` pass). (Both pass.)
 
 ### Integration (real downstream systems)
-- [ ] An integration test starts a real server and client, creates a stacked
+- [x] An integration test starts a real server and client, creates a stacked
       pane, types into each, switches, and asserts that each pane kept its own
-      output and that `pane list` reports both with their `stack` objects.
-- [ ] An integration test restarts the server and asserts the stack is
-      restored, with the same visible pane.
+      output and that `pane list` reports both with their `stack` objects. (`tests/pane_stacks.rs`: `stacked_panes_keep_their_own_output_and_are_listed_and_driven_while_hidden`.)
+- [x] An integration test restarts the server and asserts the stack is
+      restored, with the same visible pane. (`a_stack_survives_a_server_restart_with_the_same_visible_pane`.)
 
 ## Implementation notes
 
@@ -471,6 +478,36 @@ hit areas at the pane surface's origin, turns a strip click into `show` and
 the wheel into `cycle`, and derives the hidden set, which pane cycling and
 word selection respect. Verification: lint clean, nextest 4162 passed; six
 deliberate breakages, each caught.
+
+**Part 5 (dock stacks, docs, integration, benchmark), 2026-11-19.** The
+stack logic became free functions over a layout and its stacks, shared by
+tabs and the dock. Dock stacks: strip row in the dock surface
+(`DockSurface.stacks`), hidden members sized like and started with the
+visible one, slot handed on at close and exit, lenient save and restore, and
+`DockControl::StackNew` / `StackCycle`; the stack keys and strip clicks act on
+the dock while it has the keyboard. Dock pane output no longer counts as
+visible to the pane-surface render check (a spec 001 cost found in review).
+Docs in three languages and the config reference. Three real
+server-and-client integration tests in `tests/pane_stacks.rs`; restore and
+handoff fail when hidden members are not restored. Nine dock breakages, each
+caught.
+
+`just bench-render-scale`, release builds, two interleaved runs of each
+branch, against `ushineko/dock` (scenes without stacks): server render rows
+3.0% slower on average (12 cases, from 9% faster to 6% slower), client
+navigator 7.4% faster (14 cases). The spread covers both signs, so no
+regression is established; stacked scenes are not in upstream's benchmark.
+
+### E2E results (2026-11-19, release build `d9d5a070`+tests, throwaway `--session` under `tmux -L`)
+
+| Step | Result |
+| --- | --- |
+| 1 | **Pass.** `prefix+v`, then `prefix+t` in the right pane: a strip with two entries in that slot; the left pane unchanged; `pane list` shows `w1:p2` hidden and `w1:p3` visible in stack `w1:p2`. |
+| 2 | **Pass.** Labelled `yazi` and `lazygit`, each given its own output with `pane run` (the hidden one included); `prefix+period` and `prefix+comma` switch the slot, each pane's output intact. Clicks and the wheel are covered by client tests, not driven here. |
+| 3 | **Not run live.** Covered by `a_hidden_agent_is_listed` and `a_blocked_agent_in_a_hidden_member_shows_its_glyph_in_the_strip`. |
+| 4 | **Pass.** `exit` in the visible pane: the neighbour shows, the strip goes away, `pane list` has no stack. |
+| 5 | **Pass.** After `server stop` and a restart the stack, its order and visible pane are back. A stock v0.9.5 client on the patched server renders the strip and types into the slot; a patched client on a stock server sends nothing for `prefix+t`. |
+| 6–7 | **Pending:** the herdr-resurrect port and the desk test. |
 
 ## Test strategy (for review before tests are written)
 

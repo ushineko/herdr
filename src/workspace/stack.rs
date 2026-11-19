@@ -423,6 +423,28 @@ mod tests {
     }
 
     #[test]
+    fn swap_and_zoom_act_on_the_whole_slot() {
+        let (mut ws, left, right, added) = stacked_split();
+        let tab = &mut ws.tabs[0];
+        assert!(tab.layout.swap_panes(left, added));
+        assert_eq!(tab.layout.pane_ids(), vec![added, left], "the slot moved");
+        assert_eq!(
+            tab.stack_of(right).unwrap().panes,
+            vec![right, added],
+            "and its stack with it"
+        );
+        assert!(tab.show_pane(right));
+        assert_eq!(
+            tab.layout.pane_ids(),
+            vec![right, left],
+            "switching stays in the moved slot"
+        );
+        tab.zoomed = true;
+        assert_eq!(tab.layout.focused(), right, "zoom shows the visible member");
+        ws.assert_invariants_for_test();
+    }
+
+    #[test]
     fn closing_the_visible_member_shows_its_neighbour_then_collapses() {
         let (mut ws, left, right, added) = stacked_split();
         let third = ws.test_stack(right);

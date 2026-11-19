@@ -503,3 +503,38 @@ async fn a_hidden_agent_is_listed() {
     assert!(listed, "{response}");
     shutdown_test_runtimes(&mut server);
 }
+
+#[tokio::test]
+async fn a_blocked_agent_in_a_hidden_member_shows_its_glyph_in_the_strip() {
+    let Stacked {
+        mut server, hidden, ..
+    } = stacked_server();
+    let terminal = server.app.state.workspaces[0]
+        .terminal_id(hidden)
+        .cloned()
+        .unwrap();
+    let _ = server
+        .app
+        .state
+        .terminals
+        .get_mut(&terminal)
+        .unwrap()
+        .set_detected_state_with_screen_signals_at(
+            crate::detect::parse_agent_label("claude"),
+            crate::detect::AgentState::Blocked,
+            false,
+            false,
+            false,
+            false,
+            std::time::Instant::now(),
+        );
+    let (_control_rx, render_rx) = connect_test_shell(&mut server, 7, 80, 24);
+    server.render_and_stream();
+    let surface = surfaces(&render_rx).pop().expect("a pane surface");
+    let text = frame_text(&surface.frame);
+    assert!(
+        text.contains("× yazi"),
+        "the hidden blocked agent is flagged: {text}"
+    );
+    shutdown_test_runtimes(&mut server);
+}

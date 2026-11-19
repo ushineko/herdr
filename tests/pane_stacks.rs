@@ -15,8 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};
 use support::{
-    cleanup_test_base, client_shell_handshake, register_runtime_dir,
-    register_spawned_herdr_pid, send_endpoint_control, unregister_spawned_herdr_pid,
+    cleanup_test_base, client_shell_handshake, register_runtime_dir, register_spawned_herdr_pid,
+    send_endpoint_control, unregister_spawned_herdr_pid,
     CURRENT_ENDPOINT_PROTOCOL_GENERATION as CURRENT_PROTOCOL,
 };
 
@@ -158,7 +158,6 @@ fn api(socket: &Path, method: &str, params: Value) -> Value {
     serde_json::from_str(&response).expect("valid JSON response")
 }
 
-
 const CONFIG: &str = "onboarding = false\n[terminal]\ndefault_shell = \"/bin/sh\"\n";
 
 fn connect_client(dirs: &Dirs) -> UnixStream {
@@ -213,13 +212,17 @@ fn build_stack(dirs: &Dirs, client: &mut UnixStream) -> (String, String) {
         "workspace.create",
         json!({"cwd": "/tmp", "focus": true}),
     ));
-    let root = created["root_pane"]["pane_id"].as_str().unwrap().to_string();
+    let root = created["root_pane"]["pane_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     stack_control(client, json!({"op": "new", "pane_id": root}));
     let mut visible = String::new();
     wait_until("a stacked pane", || {
         let listed = panes(dirs);
         if let Some(pane) = listed.iter().find(|pane| {
-            pane["stack"]["visible"] == true && pane["workspace_id"] == created["workspace"]["workspace_id"]
+            pane["stack"]["visible"] == true
+                && pane["workspace_id"] == created["workspace"]["workspace_id"]
         }) {
             visible = pane["pane_id"].as_str().unwrap().to_string();
             true
@@ -249,16 +252,34 @@ fn stacked_panes_keep_their_own_output_and_are_listed_and_driven_while_hidden() 
     // `pane run` reaches a hidden pane: input goes to it while it stays hidden.
     send(&dirs, &hidden, "echo HIDDEN-$((40+2))");
     send(&dirs, &visible, "echo SHOWN-$((40+3))");
-    wait_until("hidden output", || pane_text(&dirs, &hidden).contains("HIDDEN-42"));
-    wait_until("visible output", || pane_text(&dirs, &visible).contains("SHOWN-43"));
+    wait_until("hidden output", || {
+        pane_text(&dirs, &hidden).contains("HIDDEN-42")
+    });
+    wait_until("visible output", || {
+        pane_text(&dirs, &visible).contains("SHOWN-43")
+    });
     assert!(!pane_text(&dirs, &visible).contains("HIDDEN-42"));
     assert!(!pane_text(&dirs, &hidden).contains("SHOWN-43"));
 
     let listed = panes(&dirs);
-    let find = |id: &str| listed.iter().find(|pane| pane["pane_id"] == id).unwrap().clone();
+    let find = |id: &str| {
+        listed
+            .iter()
+            .find(|pane| pane["pane_id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        find(&visible)["cwd"],
+        find(&hidden)["cwd"],
+        "a new stacked shell starts in the focused pane's cwd"
+    );
     assert_eq!(find(&hidden)["stack"]["visible"], false);
     assert_eq!(find(&visible)["stack"]["visible"], true);
-    assert_eq!(find(&hidden)["stack"]["stack_id"], find(&visible)["stack"]["stack_id"]);
+    assert_eq!(
+        find(&hidden)["stack"]["stack_id"],
+        find(&visible)["stack"]["stack_id"]
+    );
 
     stack_control(&mut client, json!({"op": "show", "pane_id": hidden}));
     wait_until("the switch", || {
@@ -266,7 +287,10 @@ fn stacked_panes_keep_their_own_output_and_are_listed_and_driven_while_hidden() 
             .iter()
             .any(|pane| pane["pane_id"] == hidden && pane["stack"]["visible"] == true)
     });
-    assert!(pane_text(&dirs, &hidden).contains("HIDDEN-42"), "output survives the switch");
+    assert!(
+        pane_text(&dirs, &hidden).contains("HIDDEN-42"),
+        "output survives the switch"
+    );
 }
 
 #[test]
@@ -298,7 +322,10 @@ fn a_stack_survives_a_server_restart_with_the_same_visible_pane() {
     };
     assert_eq!(by_label("beta")["stack"]["visible"], true);
     assert_eq!(by_label("alpha")["stack"]["visible"], false);
-    assert_eq!(by_label("alpha")["stack"]["stack_id"], by_label("beta")["stack"]["stack_id"]);
+    assert_eq!(
+        by_label("alpha")["stack"]["stack_id"],
+        by_label("beta")["stack"]["stack_id"]
+    );
 }
 
 #[test]
@@ -312,7 +339,10 @@ fn a_live_handoff_carries_a_stack_and_its_hidden_process() {
     send(
         &dirs,
         &hidden,
-        &format!("sh -c 'echo $$ > {}; while read l; do echo got:$l; done'", marker.display()),
+        &format!(
+            "sh -c 'echo $$ > {}; while read l; do echo got:$l; done'",
+            marker.display()
+        ),
     );
     wait_until("the hidden child", || {
         fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<i32>().is_ok())
@@ -324,10 +354,17 @@ fn a_live_handoff_carries_a_stack_and_its_hidden_process() {
     drop(server);
     thread::sleep(Duration::from_millis(300));
     wait_for_socket(&dirs.api_socket());
-    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the hidden process survived");
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "the hidden process survived"
+    );
 
     let listed = panes(&dirs);
-    let stacked: Vec<_> = listed.iter().filter(|pane| !pane["stack"].is_null()).collect();
+    let stacked: Vec<_> = listed
+        .iter()
+        .filter(|pane| !pane["stack"].is_null())
+        .collect();
     assert_eq!(stacked.len(), 2, "both members came across: {listed:?}");
     let visible_after = stacked
         .iter()
@@ -335,5 +372,7 @@ fn a_live_handoff_carries_a_stack_and_its_hidden_process() {
         .unwrap();
     assert_eq!(visible_after["pane_id"], visible, "the same pane is shown");
     send(&dirs, &hidden, "after");
-    wait_until("hidden input after handoff", || pane_text(&dirs, &hidden).contains("got:after"));
+    wait_until("hidden input after handoff", || {
+        pane_text(&dirs, &hidden).contains("got:after")
+    });
 }
