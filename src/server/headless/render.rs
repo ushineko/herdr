@@ -1000,6 +1000,8 @@ impl HeadlessServer {
             }
         }
 
+        self.stream_dock_surfaces();
+
         let (cols, rows) = self.effective_size;
         // Full-frame recovery is tracked per connection. A slow client must not
         // keep responsive peers on the global full-render path while it waits

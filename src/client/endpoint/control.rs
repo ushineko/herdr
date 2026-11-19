@@ -11,6 +11,8 @@ pub(crate) enum EndpointControlMessage {
     AgentViewProjection(DecodedAgentViewProjection),
     AgentCompletions(crate::protocol::endpoint::EndpointAgentCompletions),
     Snapshot(Box<crate::protocol::ClientShellSnapshot>),
+    /// Local patch: the endpoint's dock as drawn by its server.
+    Dock(Box<crate::protocol::endpoint::DockSurface>),
     Ignored,
 }
 
@@ -53,6 +55,12 @@ pub(crate) fn decode_endpoint_control(
             },
         ));
     }
+    if kind == crate::protocol::endpoint::DOCK_SURFACE_KIND {
+        // Optional control: a dock this client cannot read is dropped, not fatal.
+        return Ok(serde_json::from_str(data)
+            .map(|surface| EndpointControlMessage::Dock(Box::new(surface)))
+            .unwrap_or(EndpointControlMessage::Ignored));
+    }
     if kind == crate::protocol::endpoint::ENDPOINT_SNAPSHOT_KIND {
         let snapshot = serde_json::from_str(data)
             .map_err(|error| format!("invalid endpoint snapshot: {error}"))?;
@@ -74,6 +82,29 @@ pub(crate) fn protocol_failure_is_fatal(endpoint_id: &ClientEndpointId) -> bool 
 mod tests {
     use super::*;
     use crate::client::endpoint::ProfileId;
+
+    #[test]
+    fn dock_surfaces_decode_and_malformed_ones_are_dropped() {
+        let surface = crate::protocol::endpoint::DockSurface {
+            boot_id: "boot".into(),
+            rows: 3,
+            cols: 40,
+            frame: None,
+            panes: Vec::new(),
+            splits: Vec::new(),
+            zoomed: false,
+        };
+        let data = serde_json::to_string(&surface).unwrap();
+        assert!(matches!(
+            decode_endpoint_control(crate::protocol::endpoint::DOCK_SURFACE_KIND, &data).unwrap(),
+            EndpointControlMessage::Dock(decoded) if *decoded == surface
+        ));
+        assert!(matches!(
+            decode_endpoint_control(crate::protocol::endpoint::DOCK_SURFACE_KIND, "garbage")
+                .unwrap(),
+            EndpointControlMessage::Ignored
+        ));
+    }
 
     #[test]
     fn unknown_optional_controls_are_ignored() {

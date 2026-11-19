@@ -30,6 +30,10 @@ pub(crate) const RESPAWN_MAX_DELAY: Duration = Duration::from_secs(30);
 pub(crate) const RESPAWN_RESET_AFTER: Duration = Duration::from_secs(60);
 /// Width used to size dock ptys before any client reports one.
 pub(crate) const DEFAULT_DOCK_WIDTH: u16 = 80;
+/// Upper bounds on client-supplied sizes, so a bad value cannot make the
+/// dock ptys allocate an enormous screen.
+pub(crate) const MAX_DOCK_ROWS: u16 = 200;
+pub(crate) const MAX_DOCK_WIDTH: u16 = 2000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DockPaneOrigin {
@@ -116,6 +120,28 @@ impl Default for Dock {
     }
 }
 
+/// Where one dock pane is drawn: `rect` includes the separator cells on its
+/// right and bottom edges, `inner` is the program's area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DockPaneGeometry {
+    pub id: PaneId,
+    pub rect: Rect,
+    pub inner: Rect,
+    pub focused: bool,
+}
+
+/// Public id of a dock pane in dock controls and surfaces.
+pub(crate) fn dock_pane_public_id(id: PaneId) -> String {
+    format!("dock_{}", id.raw())
+}
+
+pub(crate) fn parse_dock_pane_id(id: &str) -> Option<PaneId> {
+    id.strip_prefix("dock_")?
+        .parse::<u32>()
+        .ok()
+        .map(PaneId::from_raw)
+}
+
 /// A pane that needs a process started.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpawnRequest {
@@ -192,7 +218,50 @@ impl Dock {
         Rect::new(0, 0, self.width.max(1), self.rows.max(1))
     }
 
-    /// Pane size for each dock pane in the current area.
+    /// Visible panes and where they are drawn. A pane not on the area's right
+    /// or bottom edge gives up its last column or row to a separator. Zoomed,
+    /// only the focused pane is visible and it fills the area.
+    pub(crate) fn geometry(&self) -> Vec<DockPaneGeometry> {
+        let Some(dock) = self.open() else {
+            return Vec::new();
+        };
+        let area = self.area();
+        let focused = dock.layout.focused();
+        if dock.zoomed {
+            return vec![DockPaneGeometry {
+                id: focused,
+                rect: area,
+                inner: area,
+                focused: true,
+            }];
+        }
+        let mut panes = dock
+            .layout
+            .panes(area)
+            .into_iter()
+            .map(|info| {
+                let rect = info.rect;
+                let mut inner = rect;
+                if rect.right() < area.right() && inner.width > 1 {
+                    inner.width -= 1;
+                }
+                if rect.bottom() < area.bottom() && inner.height > 1 {
+                    inner.height -= 1;
+                }
+                DockPaneGeometry {
+                    id: info.id,
+                    rect,
+                    inner,
+                    focused: info.id == focused,
+                }
+            })
+            .collect::<Vec<_>>();
+        panes.sort_by_key(|pane| (pane.rect.y, pane.rect.x));
+        panes
+    }
+
+    /// Pty size (rows, cols) for each dock pane. Panes hidden by zoom keep the
+    /// full dock size, so unzooming does not reflow them twice.
     pub(crate) fn pane_sizes(&self) -> HashMap<PaneId, (u16, u16)> {
         let Some(dock) = self.open() else {
             return HashMap::new();
@@ -205,11 +274,40 @@ impl Dock {
                 .map(|id| (*id, (area.height, area.width)))
                 .collect();
         }
-        dock.layout
-            .panes(area)
+        self.geometry()
             .into_iter()
-            .map(|info| (info.id, (info.rect.height.max(1), info.rect.width.max(1))))
+            .map(|pane| (pane.id, (pane.inner.height.max(1), pane.inner.width.max(1))))
             .collect()
+    }
+
+    /// Move focus to the neighbouring dock pane, stopping at the dock's edges.
+    pub(crate) fn focus_direction(&mut self, nav: NavDirection) -> bool {
+        let area = self.area();
+        let Some(dock) = self.open_mut() else {
+            return false;
+        };
+        if dock.zoomed {
+            return false;
+        }
+        let infos = dock.layout.panes(area);
+        let focused = dock.layout.focused();
+        let Some(current) = infos.iter().find(|info| info.id == focused) else {
+            return false;
+        };
+        let Some(next) = crate::layout::find_in_direction(current, nav, &infos) else {
+            return false;
+        };
+        dock.layout.focus_pane(next);
+        true
+    }
+
+    /// Whether the focused pane touches the dock's top edge, where resize mode
+    /// moves the dock's height instead of a divider.
+    pub(crate) fn focused_touches_top(&self) -> bool {
+        self.geometry()
+            .iter()
+            .find(|pane| pane.focused)
+            .is_some_and(|pane| pane.rect.y == 0)
     }
 
     fn size_of(&self, pane_id: PaneId) -> (u16, u16) {
@@ -469,7 +567,7 @@ impl Dock {
 
     /// Set the shared height. Returns whether it changed.
     pub(crate) fn set_rows(&mut self, rows: u16) -> bool {
-        let rows = rows.max(1);
+        let rows = rows.clamp(1, MAX_DOCK_ROWS);
         if rows == self.rows {
             return false;
         }
@@ -526,7 +624,7 @@ impl Dock {
 
     /// Record the dock width reported by a client. Returns whether it changed.
     pub(crate) fn set_width(&mut self, width: u16) -> bool {
-        let width = width.max(1);
+        let width = width.clamp(1, MAX_DOCK_WIDTH);
         if width == self.width {
             return false;
         }
@@ -585,7 +683,7 @@ impl Dock {
     /// Restore a saved dock. Panes get fresh ids and no processes yet; call
     /// `spawn_pending` to start them.
     pub(crate) fn restore(&mut self, snapshot: &crate::persist::DockSnapshot) {
-        self.rows = snapshot.rows.max(1);
+        self.rows = snapshot.rows.clamp(1, MAX_DOCK_ROWS);
         self.rows_manual = snapshot.rows_manual;
         let Some(saved_layout) = &snapshot.layout else {
             self.state = DockState::Closed;
@@ -786,15 +884,19 @@ impl crate::app::App {
         }
     }
 
+    /// Next time the server loop must wake for the dock: a due respawn, or
+    /// the next countdown tick while one is pending.
     pub(crate) fn next_dock_deadline(&self) -> Option<Instant> {
-        self.state.dock.next_respawn()
+        let respawn = self.state.dock.next_respawn()?;
+        Some(respawn.min(Instant::now() + Duration::from_secs(1)))
     }
 
-    /// Respawn seeded programs whose backoff has run out.
+    /// Respawn seeded programs whose backoff has run out. Returns whether the
+    /// dock needs redrawing, which includes a running restart countdown.
     pub(crate) fn run_due_dock_respawns(&mut self, now: Instant) -> bool {
         let spawns = self.state.dock.due_respawns(now);
         if spawns.is_empty() {
-            return false;
+            return self.dock_waiting();
         }
         self.spawn_dock_processes(spawns);
         true
@@ -926,6 +1028,148 @@ impl crate::app::App {
             self.dock_layout_changed();
         }
         changed
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Client controls
+// ---------------------------------------------------------------------------
+
+/// Resize-mode step for dividers, as a share of the split.
+const DOCK_RESIZE_STEP: f32 = 0.05;
+
+fn nav(direction: crate::protocol::endpoint::DockDirection) -> NavDirection {
+    use crate::protocol::endpoint::DockDirection;
+    match direction {
+        DockDirection::Left => NavDirection::Left,
+        DockDirection::Right => NavDirection::Right,
+        DockDirection::Up => NavDirection::Up,
+        DockDirection::Down => NavDirection::Down,
+    }
+}
+
+impl crate::app::App {
+    /// Apply one client dock operation other than input. Returns whether the
+    /// dock needs redrawing. Unknown pane ids are ignored: a pane can close
+    /// between the client drawing it and the operation arriving.
+    pub(crate) fn apply_dock_control(
+        &mut self,
+        control: crate::protocol::endpoint::DockControl,
+    ) -> bool {
+        use crate::protocol::endpoint::{DockControl, DockDirection};
+        let pane = |id: &str| parse_dock_pane_id(id).filter(|id| self.state.dock.contains(*id));
+        match control {
+            DockControl::Width { cols } => {
+                self.dock_set_width(cols);
+                true
+            }
+            DockControl::Input { .. } | DockControl::Unknown => false,
+            DockControl::Split { pane_id, right } => pane(&pane_id).is_some_and(|id| {
+                self.dock_split(
+                    id,
+                    if right {
+                        Direction::Horizontal
+                    } else {
+                        Direction::Vertical
+                    },
+                )
+            }),
+            DockControl::Close { pane_id } => pane(&pane_id).is_some_and(|id| self.dock_close(id)),
+            DockControl::Focus { pane_id } => pane(&pane_id).is_some_and(|id| self.dock_focus(id)),
+            DockControl::FocusDirection { direction } => {
+                let changed = self.state.dock.focus_direction(nav(direction));
+                if changed {
+                    self.state.mark_session_dirty();
+                }
+                changed
+            }
+            DockControl::ToggleZoom => self.dock_toggle_zoom(),
+            DockControl::Ratio { path, ratio } => self.dock_set_ratio(&path, ratio),
+            DockControl::Resize { direction } => match direction {
+                DockDirection::Up | DockDirection::Down
+                    if self.state.dock.focused_touches_top() =>
+                {
+                    let rows = self.state.dock.rows;
+                    let next = if direction == DockDirection::Up {
+                        rows.saturating_add(1)
+                    } else {
+                        rows.saturating_sub(1).max(1)
+                    };
+                    self.dock_set_rows(next);
+                    true
+                }
+                _ => self.dock_resize_focused(nav(direction), DOCK_RESIZE_STEP),
+            },
+            DockControl::Rows { rows } => {
+                self.dock_set_rows(rows);
+                true
+            }
+            DockControl::ResetRows => {
+                self.dock_reset_rows();
+                true
+            }
+            DockControl::Reset => {
+                self.reset_dock();
+                true
+            }
+        }
+    }
+
+    /// The live runtime of a dock pane, for routing client input.
+    pub(crate) fn dock_runtime(&self, pane_id: &str) -> Option<&crate::terminal::TerminalRuntime> {
+        let id = parse_dock_pane_id(pane_id)?;
+        let terminal = self
+            .state
+            .dock
+            .open()?
+            .panes
+            .get(&id)?
+            .terminal_id
+            .as_ref()?;
+        self.terminal_runtimes.get(terminal)
+    }
+
+    /// Whether a seeded pane is waiting to restart, so its countdown needs
+    /// redrawing about once a second.
+    pub(crate) fn dock_waiting(&self) -> bool {
+        self.state.dock.next_respawn().is_some()
+    }
+}
+
+#[cfg(test)]
+impl crate::app::App {
+    /// Build a seeded dock whose panes use the given runtimes instead of
+    /// spawned processes. Returns the pane ids, left to right.
+    pub(crate) fn install_test_dock(
+        &mut self,
+        panes: Vec<(&str, crate::terminal::TerminalRuntime)>,
+    ) -> Vec<PaneId> {
+        self.state.dock.seed = DockConfig {
+            rows: 3,
+            panes: panes
+                .iter()
+                .map(|(label, _)| crate::config::DockPaneConfig {
+                    label: (*label).into(),
+                    command: "test".into(),
+                    cwd: Some(PathBuf::from("/tmp")),
+                    width: 1,
+                })
+                .collect(),
+        };
+        let spawns = self.state.dock.build_from_seed();
+        let now = Instant::now();
+        let mut ids = Vec::new();
+        for (spawn, (_, runtime)) in spawns.iter().zip(panes) {
+            let terminal = TerminalId::alloc();
+            self.terminal_runtimes.insert(terminal.clone(), runtime);
+            self.state.terminals.insert(
+                terminal.clone(),
+                crate::terminal::TerminalState::new(terminal.clone(), PathBuf::from("/tmp")),
+            );
+            self.state.dock.started(spawn.pane_id, terminal, now);
+            ids.push(spawn.pane_id);
+        }
+        ids
     }
 }
 
@@ -1144,6 +1388,17 @@ pub(crate) mod tests {
         assert_eq!(dock.rows, 9);
         assert!(dock.reset_rows());
         assert_eq!(dock.rows, 3);
+    }
+
+    #[test]
+    fn client_supplied_sizes_are_clamped() {
+        let mut dock = Dock::default();
+        dock.set_rows(u16::MAX);
+        dock.set_width(u16::MAX);
+        assert_eq!((dock.rows, dock.width), (MAX_DOCK_ROWS, MAX_DOCK_WIDTH));
+        dock.set_rows(0);
+        dock.set_width(0);
+        assert_eq!((dock.rows, dock.width), (1, 1));
     }
 
     #[test]

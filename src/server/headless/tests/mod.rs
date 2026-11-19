@@ -1,5 +1,7 @@
 use super::*;
 
+#[path = "dock.rs"]
+mod dock_tests;
 mod event_fairness;
 mod native_graphics;
 #[path = "pane_move.rs"]

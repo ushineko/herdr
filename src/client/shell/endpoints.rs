@@ -22,6 +22,10 @@ pub(crate) struct ClientShellEndpoint {
     pending_agent_view_projection: Option<ClientEndpointAgentViewProjection>,
     pub(crate) agent_view_projection_supported: bool,
     pub(crate) methods: Option<HashSet<String>>,
+    /// Local patch: the endpoint advertised the dock capability.
+    pub(crate) dock_supported: bool,
+    /// Local patch: the endpoint's dock as last drawn by its server.
+    pub(crate) dock_surface: Option<Box<crate::protocol::endpoint::DockSurface>>,
 }
 
 pub(super) struct MachineHit {
@@ -88,6 +92,8 @@ impl ClientShellState {
                 agent_view_projection_supported: previous
                     .is_some_and(|endpoint| endpoint.agent_view_projection_supported),
                 methods: previous.and_then(|endpoint| endpoint.methods.clone()),
+                dock_supported: previous.is_some_and(|endpoint| endpoint.dock_supported),
+                dock_surface: previous.and_then(|endpoint| endpoint.dock_surface.clone()),
             });
         }
 
@@ -133,6 +139,8 @@ impl ClientShellState {
             endpoint.agent_view_projection = None;
             endpoint.pending_agent_view_projection = None;
             endpoint.agent_view_projection_supported = false;
+            endpoint.dock_supported = false;
+            endpoint.dock_surface = None;
         }
     }
 
@@ -170,6 +178,62 @@ impl ClientShellState {
             self.pane_scroll_in_flight.clear();
             self.pane_scroll_queued.clear();
         }
+    }
+
+    /// Local patch: record whether an endpoint offers the dock. Losing support
+    /// drops any dock it drew.
+    pub(crate) fn set_endpoint_dock_supported(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        supported: bool,
+    ) {
+        if let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        {
+            endpoint.dock_supported = supported;
+            if !supported {
+                endpoint.dock_surface = None;
+            }
+        }
+    }
+
+    /// Local patch: store an endpoint's dock surface. Surfaces from a previous
+    /// server boot are dropped, and only a supporting endpoint keeps one.
+    pub(crate) fn set_endpoint_dock_surface(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        surface: crate::protocol::endpoint::DockSurface,
+    ) -> bool {
+        let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        else {
+            return false;
+        };
+        let stale = endpoint
+            .snapshot
+            .as_deref()
+            .is_some_and(|snapshot| snapshot.boot_id != surface.boot_id);
+        if !endpoint.dock_supported || stale {
+            return false;
+        }
+        endpoint.dock_surface = Some(Box::new(surface));
+        true
+    }
+
+    /// Local patch: the active endpoint's dock surface, if it has a dock.
+    // Drawn by the client dock layout in the next commit of this series.
+    #[allow(dead_code)]
+    pub(crate) fn active_dock_surface(&self) -> Option<&crate::protocol::endpoint::DockSurface> {
+        self.endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == self.active_endpoint_id)
+            .filter(|endpoint| endpoint.dock_supported)
+            .and_then(|endpoint| endpoint.dock_surface.as_deref())
+            .filter(|surface| surface.rows > 0)
     }
 
     pub(crate) fn set_endpoint_agent_view_projection_supported(
@@ -742,5 +806,7 @@ pub(super) fn local_endpoint() -> ClientShellEndpoint {
         pending_agent_view_projection: None,
         agent_view_projection_supported: false,
         methods: None,
+        dock_supported: false,
+        dock_surface: None,
     }
 }
