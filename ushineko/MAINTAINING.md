@@ -65,6 +65,8 @@ nothing posts to issues, deploys the website, or publishes on a `v*` tag.
 | others | disabled | Upstream infrastructure (website deploy, nix, issue labels). |
 
 A new herdr release can add workflows; disable any new one that is not needed.
+`build-artifacts-manual.yml` carries one fork patch: its Windows job runs on
+`windows-2022`, as upstream's `release.yml` does (see the commit for why).
 Workflow files are left unchanged in the tree so rebases stay clean.
 
 To release, from a checkout of this fork:
