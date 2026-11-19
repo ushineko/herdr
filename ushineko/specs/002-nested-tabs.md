@@ -196,6 +196,19 @@ contain, implementation stops and the user decides.
   (members dropped, index clamped) and logged, never a failed restore.
 - The dock's saved layout gets the same optional field.
 
+### Phase 0 findings
+
+**Stock restore (2026-11-19).** A stock v0.9.5 release build saved a real
+session in an isolated config (workspace `marker-ws`, panes 1 and 2 split
+side by side). The saved tab was then edited to add pane 3 (a hidden member,
+cwd `/usr`) to the `panes` map and
+`"stacks": [{"panes": [2, 3], "active": 0}]`. Stock v0.9.5 restored it:
+`session restore evaluated outcome="ok" workspaces=1`, no warnings, panes 1
+and 2 back with their cwds, pane 3 not created. Its next save dropped
+`stacks` and pane 3. A second variant also set the tab's `focused` to the
+hidden pane 3 (with `active: 1`); stock restored it the same way and focused
+pane 1. Rollback therefore loses only the hidden panes, as designed.
+
 ### Live handoff
 
 Handoff transfers runtimes listed by the workspace snapshot. Hidden panes are
@@ -212,8 +225,8 @@ in the audit.
 - [ ] Characterization tests for the protected behaviour (close-tab, session
       save and restore, handoff transfer, directional focus, agent lists) are
       named or added before code moves.
-- [ ] A test shows that stock v0.9.5 restores a session containing stacks
-      (the visible panes, no error), as for the dock.
+- [x] A test shows that stock v0.9.5 restores a session containing stacks
+      (the visible panes, no error), as for the dock. (Phase 0 findings.)
 - [ ] Live handoff carries hidden panes, or the gap is recorded with a
       decision.
 - [ ] The audit has an independent review before implementation starts.
