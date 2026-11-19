@@ -23,6 +23,7 @@ mod ids;
 mod popup;
 mod runtime;
 mod session;
+mod stacks;
 pub mod state;
 mod tab_bar_status;
 mod terminal_targets;

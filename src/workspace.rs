@@ -454,8 +454,11 @@ impl Workspace {
         if idx < self.tabs.len() {
             self.active_tab = idx;
             if let Some(tab) = self.tabs.get_mut(idx) {
-                for pane in tab.panes.values_mut() {
-                    pane.seen = true;
+                // Local patch (spec 002): hidden stack members are not seen.
+                for pane_id in tab.layout.pane_ids() {
+                    if let Some(pane) = tab.panes.get_mut(&pane_id) {
+                        pane.seen = true;
+                    }
                 }
             }
         }
@@ -726,8 +729,7 @@ impl Workspace {
     /// Local patch (spec 002): start a shell as a new member of `pane_id`'s
     /// slot, shown and focused. It is spawned as a split and folded into the
     /// slot, so it shares the split path's spawn, environment and numbering.
-    // Wired to keys and the API in part 3 of spec 002.
-    #[allow(clippy::too_many_arguments, dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn stack_pane_shell(
         &mut self,
         pane_id: PaneId,

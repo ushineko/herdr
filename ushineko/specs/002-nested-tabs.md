@@ -323,19 +323,19 @@ in the audit.
 - [ ] Closing or exiting the visible pane shows its neighbour. When one pane
       is left, the slot is a plain pane and draws no strip.
 - [ ] Split, swap, move-to-tab and zoom act on the whole slot.
-- [ ] Focusing a hidden pane from Go To, an agent-list jump, a notification
-      or `herdr pane focus` makes it visible first.
-- [ ] Hidden panes appear in agent lists, Go To and notifications, like any
+- [x] Focusing a hidden pane from Go To, an agent-list jump, a notification
+      or `herdr pane focus` makes it visible first. (Part 3: `focus_pane_in_workspace` shows it; `focusing_a_hidden_member_shows_it`.)
+- [x] Hidden panes appear in agent lists, Go To and notifications, like any
       pane, and their notifications (sound and toast paths included) fire
-      even when their tab is active.
+      even when their tab is active. (Part 3: lists use `Tab::all_pane_ids`; `pane_is_in_active_tab` and both inline checks in `notifications.rs` treat hidden members as off screen; `a_hidden_agent_is_listed`, `hidden_members_count_as_off_screen_for_notifications_and_seen`.)
 - [ ] Patched clients learn hidden panes from the pane-stack control: pane
       cycling and copy-mode never land on a hidden pane. `ClientShellPane`
       and the endpoint fixtures are unchanged.
-- [ ] Geometry commands on a hidden pane reveal it, then act on its slot,
+- [x] Geometry commands on a hidden pane reveal it, then act on its slot,
       in the API layer too: `pane move` with a hidden target, and split and
-      swap by a hidden id (tests).
-- [ ] Switching the visible pane carries focus and previous focus, and bumps
-      the client projection revision.
+      swap by a hidden id (tests). (Part 3: `App::reveal_geometry_targets` before dispatch; `geometry_requests_on_a_hidden_member_reveal_it_then_act`.)
+- [x] Switching the visible pane carries focus and previous focus, and bumps
+      the client projection revision. (Parts 1 and 3: `replace_pane`; `App::stack_layout_changed` requests a full render.)
 - [x] Closing, moving or the exit of any member of a one-slot stack removes
       only that pane; the tab and workspace stay (audit theme A, tested for
       each close, move and death path). (Part 1:
@@ -350,9 +350,9 @@ in the audit.
       `Workspace::test_adversarial_identity_state_with_stacks`.)
 
 ### JSON API
-- [ ] `pane list` lists hidden panes, with the optional `stack` object on
-      stacked panes only; unstacked output is unchanged.
-- [ ] `pane read`, `pane process-info` and `pane run` work on a hidden pane.
+- [x] `pane list` lists hidden panes, with the optional `stack` object on
+      stacked panes only; unstacked output is unchanged. (Part 3: `PaneInfo.stack`; `pane_list_reports_hidden_members_with_their_stack`.)
+- [x] `pane read`, `pane process-info` and `pane run` work on a hidden pane. (Part 3: they address panes by id, not geometry; `a_hidden_member_can_be_read_without_being_shown`. `pane run` is checked end to end in part 5.)
 
 ### Strip and input
 - [ ] A slot with two or more panes draws a one-row strip at its top: labels
@@ -366,12 +366,12 @@ in the audit.
 - [ ] A stock client connected to a patched server renders the strip and
       works; a patched client against a stock server shows no pane-stack
       controls.
-- [ ] Unknown pane-stack operations and malformed controls are ignored by the
-      server (serde `Unknown` fallbacks, tested).
+- [x] Unknown pane-stack operations and malformed controls are ignored by the
+      server (serde `Unknown` fallbacks, tested). (Part 3: `pane_stack_controls_round_trip_and_unknown_ops_decode_as_unknown`, `show_and_cycle_controls_switch_the_slot_and_unknown_ones_are_ignored`.)
 
 ### Render hot path
-- [ ] Output from a hidden pane takes the hidden-source early exit (test),
-      for workspace stacks and dock stacks alike.
+- [x] Output from a hidden pane takes the hidden-source early exit (test),
+      for workspace stacks and dock stacks alike. (Part 3, workspace stacks: `hidden_member_output_takes_the_hidden_source_early_exit`. Dock stacks: part 5.)
 - [ ] `just bench-render-scale` with 1 and 15 populated panes, some of them
       hidden in stacks, compared with `ushineko/dock`; the delta is recorded
       here.
@@ -443,6 +443,24 @@ visible member's size (`Tab::with_hidden_members`). Verification: lint clean,
 nextest 4141 passed; eight deliberate breakages, each caught. The live
 handoff integration test comes with part 5, once stacks can be built from
 outside.
+
+**Part 3 (server, protocol, API), 2026-11-19.** `src/ui/stack_strip.rs`
+owns the strip geometry (the top row of a stacked slot's content area) and
+draws it into the tab surface after the panes; sizing, resize and the client
+geometry share `strip_and_content`, and hidden members are resized with their
+visible member. The hidden-source early exit, `pane_is_in_active_tab`, the two
+inline notification checks and seen-marking treat hidden members as off
+screen. Lists (`pane list`, `agent list`, the session snapshot, name targets,
+sidebar details, metadata expiry) use `Tab::all_pane_ids`. `PaneInfo` gains an
+optional `stack` object (the frozen method shapes are unchanged; the generated
+API schema was regenerated). The `pane_stacks` capability and the
+`endpoint.pane-stack.v1` / `.control.v1` controls carry strip geometry and
+`new` / `show` / `cycle`; a view without stacks sends nothing. API geometry
+requests on a hidden member reveal it first (`App::reveal_geometry_targets`).
+Verification: lint clean, nextest 4156 passed; 15 deliberate breakages, all
+caught once two test gaps were closed (active-tab resize, workspace-filtered
+`pane list`). Known gap: a hidden pane's respawn size goes through its slot
+(`new_pane_terminal_size`), untested.
 
 ## Test strategy (for review before tests are written)
 

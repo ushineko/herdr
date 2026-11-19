@@ -275,6 +275,8 @@ pub(super) struct RenderedPaneSurface {
     pub(super) graphics: protocol::SurfaceGraphicsScene,
     pub(super) graphics_delivery: crate::kitty_graphics::surface::DeliveryCache,
     pub(super) graphics_sources: crate::kitty_graphics::surface::SourceFiles,
+    /// Local patch (spec 002): the pane stacks in this view, with strips.
+    pub(super) stacks: Vec<crate::protocol::endpoint::PaneStackStrip>,
 }
 
 #[derive(Debug)]
@@ -483,6 +485,7 @@ pub(super) fn render_pane_surface(
             }
         }
     }
+    let stacks = pane_stack_strips(app, target, &layout.pane_infos);
     Ok(RenderedPaneSurface {
         frame: FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, cursor, &hyperlinks),
         panes,
@@ -491,7 +494,59 @@ pub(super) fn render_pane_surface(
         graphics,
         graphics_delivery: next_graphics_delivery,
         graphics_sources,
+        stacks,
     })
+}
+
+/// Local patch (spec 002): the strips of the stacks among the drawn panes,
+/// with public pane ids, in pane-surface coordinates.
+fn pane_stack_strips(
+    app: &app::App,
+    target: Option<crate::ui::TabSurfaceTarget>,
+    pane_infos: &[crate::layout::PaneInfo],
+) -> Vec<crate::protocol::endpoint::PaneStackStrip> {
+    let Some(target) = target else {
+        return Vec::new();
+    };
+    let ws_idx = target.workspace_index;
+    let Some(tab) = app
+        .state
+        .workspaces
+        .get(ws_idx)
+        .and_then(|ws| ws.tabs.get(target.tab_index))
+    else {
+        return Vec::new();
+    };
+    if tab.stacks.is_empty() {
+        return Vec::new();
+    }
+    let mut strips = Vec::new();
+    for info in pane_infos {
+        let pane_inner = crate::ui::pane_inner_rect(info.rect, info.borders);
+        let (Some(strip), _) = crate::ui::strip_and_content(tab, info.id, pane_inner) else {
+            continue;
+        };
+        let Some(visible) = app.public_pane_id(ws_idx, info.id) else {
+            continue;
+        };
+        let members = crate::ui::strip_entries(&app.state, tab, info.id, strip)
+            .into_iter()
+            .filter_map(|entry| {
+                Some(crate::protocol::endpoint::PaneStackMember {
+                    pane_id: app.public_pane_id(ws_idx, entry.pane_id)?,
+                    x: entry.x,
+                    width: entry.width,
+                    label: entry.label.trim().to_string(),
+                })
+            })
+            .collect();
+        strips.push(crate::protocol::endpoint::PaneStackStrip {
+            strip: strip.into(),
+            visible,
+            members,
+        });
+    }
+    strips
 }
 
 fn render_popup_surface(

@@ -5,6 +5,8 @@ mod panes;
 mod release_notes;
 mod scrollbar;
 mod sidebar;
+mod stack_strip;
+pub(crate) use self::stack_strip::{strip_and_content, strip_entries};
 mod status;
 mod tab_surface;
 mod text;

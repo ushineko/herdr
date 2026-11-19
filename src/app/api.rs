@@ -940,6 +940,9 @@ impl App {
         use crate::api::schema::{
             ErrorBody, ErrorResponse, Method, ResponseResult, SuccessResponse,
         };
+        // Local patch (spec 002): geometry requests on a hidden stack member
+        // reveal it first, then act on its slot.
+        self.reveal_geometry_targets(&request.method);
 
         let response = match request.method {
             Method::ServerStop(_) => {

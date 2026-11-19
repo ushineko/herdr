@@ -369,8 +369,13 @@ impl HeadlessServer {
                     .active
                     .and_then(|ws_idx| self.app.state.workspaces.get(ws_idx))
                     .is_some_and(|ws| {
+                        // Local patch (spec 002): a hidden stack member is not
+                        // on screen, so it notifies like a background tab.
                         ws.find_tab_index_for_pane(pane_id_val)
-                            .is_some_and(|tab_idx| ws.active_tab_index() == tab_idx)
+                            .is_some_and(|tab_idx| {
+                                ws.active_tab_index() == tab_idx
+                                    && !ws.tabs[tab_idx].is_hidden_pane(pane_id_val)
+                            })
                     });
 
                 let suppress_active_tab_notifications =
@@ -463,8 +468,13 @@ impl HeadlessServer {
                     .active
                     .and_then(|ws_idx| self.app.state.workspaces.get(ws_idx))
                     .is_some_and(|ws| {
+                        // Local patch (spec 002): a hidden stack member is not
+                        // on screen, so it notifies like a background tab.
                         ws.find_tab_index_for_pane(pane_id_val)
-                            .is_some_and(|tab_idx| ws.active_tab_index() == tab_idx)
+                            .is_some_and(|tab_idx| {
+                                ws.active_tab_index() == tab_idx
+                                    && !ws.tabs[tab_idx].is_hidden_pane(pane_id_val)
+                            })
                     });
 
                 let suppress_active_tab_notifications =

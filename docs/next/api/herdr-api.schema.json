@@ -829,6 +829,17 @@
                 }
               ]
             },
+            "stack": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/event/$defs/PaneStackInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local patch (spec 002): set for members of a pane stack."
+            },
             "state_labels": {
               "additionalProperties": {
                 "type": "string"
@@ -1025,6 +1036,31 @@
             "offset_from_bottom",
             "max_offset_from_bottom",
             "viewport_rows"
+          ],
+          "type": "object"
+        },
+        "PaneStackInfo": {
+          "description": "Local patch (spec 002): a pane's place in its stack.",
+          "properties": {
+            "index": {
+              "description": "Position in the strip, from 0.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stack_id": {
+              "description": "Identifies the stack while it exists: the public id of its first\nmember.",
+              "type": "string"
+            },
+            "visible": {
+              "description": "Whether this member is the one shown.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stack_id",
+            "index",
+            "visible"
           ],
           "type": "object"
         },
@@ -7937,6 +7973,17 @@
                 }
               ]
             },
+            "stack": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/PaneStackInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local patch (spec 002): set for members of a pane stack."
+            },
             "state_labels": {
               "additionalProperties": {
                 "type": "string"
@@ -8444,6 +8491,31 @@
             "offset_from_bottom",
             "max_offset_from_bottom",
             "viewport_rows"
+          ],
+          "type": "object"
+        },
+        "PaneStackInfo": {
+          "description": "Local patch (spec 002): a pane's place in its stack.",
+          "properties": {
+            "index": {
+              "description": "Position in the strip, from 0.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stack_id": {
+              "description": "Identifies the stack while it exists: the public id of its first\nmember.",
+              "type": "string"
+            },
+            "visible": {
+              "description": "Whether this member is the one shown.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stack_id",
+            "index",
+            "visible"
           ],
           "type": "object"
         },

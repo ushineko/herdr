@@ -438,7 +438,10 @@ impl HeadlessServer {
             else {
                 return false;
             };
-            tab.panes.contains_key(&pane_id) && (!tab.zoomed || tab.layout.focused() == pane_id)
+            // Local patch (spec 002): a hidden stack member is not on screen.
+            tab.panes.contains_key(&pane_id)
+                && !tab.is_hidden_pane(pane_id)
+                && (!tab.zoomed || tab.layout.focused() == pane_id)
         })
     }
 
@@ -745,7 +748,9 @@ impl HeadlessServer {
                         graphics,
                         graphics_delivery: next_graphics_delivery,
                         graphics_sources,
+                        stacks,
                     } = shell_render.expect("active shell surface");
+                    self.send_pane_stacks(client_id, stacks);
                     surface_parts = Some((
                         panes,
                         splits,

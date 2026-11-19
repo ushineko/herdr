@@ -102,13 +102,20 @@ pub(crate) fn new_pane_terminal_size(
         NewPanePlacement::Alone => alone(),
         NewPanePlacement::Existing { ws_idx, pane } => tab_for(ws_idx, pane)
             .and_then(|tab| {
-                if tab.zoomed && tab.layout.focused() == pane {
+                // Local patch (spec 002): a hidden member is sized by its slot.
+                let slot = tab.slot_leaf(pane).unwrap_or(pane);
+                if tab.zoomed && tab.layout.focused() == slot {
                     let multi_pane = tab.layout.pane_count() > 1;
-                    return Some(pane_inner_rect(area, zoomed_pane_borders(app, multi_pane)));
+                    let inner = pane_inner_rect(area, zoomed_pane_borders(app, multi_pane));
+                    return Some(super::stack_strip::content_rect(tab, slot, inner));
                 }
                 let panes = tab.layout.panes(area);
-                let index = panes.iter().position(|info| info.id == pane)?;
-                Some(laid_out(panes, index))
+                let index = panes.iter().position(|info| info.id == slot)?;
+                Some(super::stack_strip::content_rect(
+                    tab,
+                    slot,
+                    laid_out(panes, index),
+                ))
             })
             .unwrap_or_else(alone),
         NewPanePlacement::ZoomedOverlay => pane_inner_rect(area, zoomed_pane_borders(app, true)),
@@ -327,6 +334,8 @@ pub(super) fn resize_tab_panes(
             runtime_for_tab_pane(app, terminal_runtimes, workspace_index, tab, focused_id)
         {
             let pane_inner = pane_inner_rect(area, zoomed_pane_borders(app, multi_pane));
+            // Local patch (spec 002): a stack's strip takes the top row.
+            let pane_inner = super::stack_strip::content_rect(tab, focused_id, pane_inner);
             let inner_rect = terminal_inner_rect(rt, pane_inner, app.pane_scrollbars);
             if !app.direct_attach_resize_locks.contains(terminal_id) {
                 rt.resize(
@@ -336,6 +345,15 @@ pub(super) fn resize_tab_panes(
                     cell_size.height_px,
                 );
             }
+            resize_hidden_members(
+                app,
+                terminal_runtimes,
+                workspace_index,
+                tab,
+                focused_id,
+                pane_inner,
+                cell_size,
+            );
         }
         return;
     }
@@ -347,9 +365,51 @@ pub(super) fn resize_tab_panes(
         app.pane_outer_borders,
     ) {
         let pane_inner = pane_inner_rect(info.rect, info.borders);
+        // Local patch (spec 002): a stack's strip takes the top row.
+        let pane_inner = super::stack_strip::content_rect(tab, info.id, pane_inner);
 
         if let Some((terminal_id, rt)) =
             runtime_for_tab_pane(app, terminal_runtimes, workspace_index, tab, info.id)
+        {
+            let inner_rect = terminal_inner_rect(rt, pane_inner, app.pane_scrollbars);
+            if !app.direct_attach_resize_locks.contains(terminal_id) {
+                rt.resize(
+                    inner_rect.height,
+                    inner_rect.width,
+                    cell_size.width_px,
+                    cell_size.height_px,
+                );
+            }
+        }
+        resize_hidden_members(
+            app,
+            terminal_runtimes,
+            workspace_index,
+            tab,
+            info.id,
+            pane_inner,
+            cell_size,
+        );
+    }
+}
+
+/// Local patch (spec 002): size a stack's hidden members like its visible
+/// one, so switching never reflows.
+fn resize_hidden_members(
+    app: &AppState,
+    terminal_runtimes: &TerminalRuntimeRegistry,
+    workspace_index: usize,
+    tab: &crate::workspace::Tab,
+    visible: PaneId,
+    pane_inner: Rect,
+    cell_size: crate::kitty_graphics::HostCellSize,
+) {
+    let Some(stack) = tab.stack_of(visible) else {
+        return;
+    };
+    for pane_id in stack.panes.iter().filter(|id| **id != visible) {
+        if let Some((terminal_id, rt)) =
+            runtime_for_tab_pane(app, terminal_runtimes, workspace_index, tab, *pane_id)
         {
             let inner_rect = terminal_inner_rect(rt, pane_inner, app.pane_scrollbars);
             if !app.direct_attach_resize_locks.contains(terminal_id) {
@@ -388,6 +448,8 @@ pub(super) fn compute_pane_infos_for_tab(
         let focused_id = tab.layout.focused();
         let borders = zoomed_pane_borders(app, multi_pane);
         let pane_inner = pane_inner_rect(area, borders);
+        // Local patch (spec 002): a stack's strip takes the top row.
+        let pane_inner = super::stack_strip::content_rect(tab, focused_id, pane_inner);
         let mut inner_rect = pane_inner;
         let mut scrollbar_rect = None;
         if let Some(rt) = app.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, focused_id) {
@@ -405,6 +467,17 @@ pub(super) fn compute_pane_infos_for_tab(
                     cell_size.height_px,
                 );
             }
+        }
+        if resize_panes {
+            resize_hidden_members(
+                app,
+                terminal_runtimes,
+                ws_idx,
+                tab,
+                focused_id,
+                pane_inner,
+                cell_size,
+            );
         }
         return vec![PaneInfo {
             id: focused_id,
@@ -425,6 +498,19 @@ pub(super) fn compute_pane_infos_for_tab(
 
     for info in &mut pane_infos {
         let pane_inner = pane_inner_rect(info.rect, info.borders);
+        // Local patch (spec 002): a stack's strip takes the top row.
+        let pane_inner = super::stack_strip::content_rect(tab, info.id, pane_inner);
+        if resize_panes {
+            resize_hidden_members(
+                app,
+                terminal_runtimes,
+                ws_idx,
+                tab,
+                info.id,
+                pane_inner,
+                cell_size,
+            );
+        }
 
         let mut inner_rect = pane_inner;
         let mut scrollbar_rect = None;

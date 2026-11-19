@@ -524,6 +524,9 @@ pub(crate) enum ServerEvent {
     ClientShellPresentationSync { client_id: u64, token: String },
     /// Local patch: a dock operation from a client shell (JSON `DockControl`).
     ClientDockControl { client_id: u64, data: String },
+    /// Local patch: a pane-stack operation from a client shell (JSON
+    /// `PaneStackControl`, spec 002).
+    ClientPaneStackControl { client_id: u64, data: String },
     /// A client-owned shell invoked one endpoint operation through this connection.
     ClientShellEndpointRequest {
         client_id: u64,
@@ -1344,6 +1347,11 @@ fn client_read_loop_with_endpoint_controls(
                 if kind == crate::protocol::endpoint::DOCK_CONTROL_KIND =>
             {
                 ServerEvent::ClientDockControl { client_id, data }
+            }
+            ClientMessage::EndpointControl { kind, data }
+                if kind == crate::protocol::endpoint::PANE_STACK_CONTROL_KIND =>
+            {
+                ServerEvent::ClientPaneStackControl { client_id, data }
             }
             ClientMessage::EndpointControl { kind, data }
                 if kind == crate::protocol::endpoint::PRESENTATION_EFFECTS_SYNC_KIND =>

@@ -245,7 +245,12 @@ impl AppState {
             .get_mut(ws_idx)
             .and_then(|ws| ws.tabs.get_mut(tab_idx))
         {
-            tab.layout.focus_pane(pane_id);
+            // Local patch (spec 002): a hidden stack member is shown first,
+            // and counts as seen once shown.
+            tab.show_pane(pane_id);
+            if let Some(pane) = tab.panes.get_mut(&pane_id) {
+                pane.seen = true;
+            }
             self.previous_pane_focus = previous;
             self.mark_session_dirty();
             return true;
@@ -287,13 +292,11 @@ impl AppState {
             .enumerate()
             .flat_map(|(ws_idx, ws)| {
                 ws.tabs.iter().flat_map(move |tab| {
-                    tab.layout
-                        .pane_ids()
-                        .into_iter()
-                        .filter_map(move |pane_id| {
-                            ws.pane_state(pane_id)
-                                .map(|pane| (ws_idx, pane_id, pane.attached_terminal_id.clone()))
-                        })
+                    // Local patch (spec 002): hidden stack members too.
+                    tab.all_pane_ids().into_iter().filter_map(move |pane_id| {
+                        ws.pane_state(pane_id)
+                            .map(|pane| (ws_idx, pane_id, pane.attached_terminal_id.clone()))
+                    })
                 })
             })
             .collect();
@@ -340,14 +343,12 @@ impl AppState {
             .enumerate()
             .flat_map(|(ws_idx, workspace)| {
                 workspace.tabs.iter().flat_map(move |tab| {
-                    tab.layout
-                        .pane_ids()
-                        .into_iter()
-                        .filter_map(move |pane_id| {
-                            workspace
-                                .pane_state(pane_id)
-                                .map(|pane| (ws_idx, pane_id, pane.attached_terminal_id.clone()))
-                        })
+                    // Local patch (spec 002): hidden stack members too.
+                    tab.all_pane_ids().into_iter().filter_map(move |pane_id| {
+                        workspace
+                            .pane_state(pane_id)
+                            .map(|pane| (ws_idx, pane_id, pane.attached_terminal_id.clone()))
+                    })
                 })
             })
             .collect::<Vec<_>>();
@@ -379,9 +380,11 @@ impl AppState {
         if active_ws_idx != ws_idx {
             return false;
         }
-        self.workspaces[ws_idx]
-            .find_tab_index_for_pane(pane_id)
-            .is_some_and(|tab_idx| tab_idx == self.workspaces[ws_idx].active_tab)
+        let ws = &self.workspaces[ws_idx];
+        // Local patch (spec 002): a hidden stack member is not on screen.
+        ws.find_tab_index_for_pane(pane_id).is_some_and(|tab_idx| {
+            tab_idx == ws.active_tab && !ws.tabs[tab_idx].is_hidden_pane(pane_id)
+        })
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
@@ -463,7 +466,11 @@ impl AppState {
         };
 
         let mut changed = false;
-        for pane in tab.panes.values_mut() {
+        // Local patch (spec 002): hidden stack members are not seen.
+        for pane_id in tab.layout.pane_ids() {
+            let Some(pane) = tab.panes.get_mut(&pane_id) else {
+                continue;
+            };
             if !pane.seen {
                 pane.seen = true;
                 changed = true;

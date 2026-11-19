@@ -196,6 +196,10 @@ pub(crate) struct ClientConnection {
     pub(crate) dock_opt_in: bool,
     /// Last dock surface sent, to skip identical resends.
     pub(crate) last_dock_message: Option<String>,
+    /// Local patch (spec 002): the last pane-stack surface sent, to skip
+    /// repeats. `None` stands for "no stacks", so stack-free sessions send
+    /// nothing.
+    pub(crate) last_pane_stack_message: Option<String>,
     /// Channels for sending framed ServerMessage data to the client writer thread.
     pub(crate) writer: Option<ClientWriter>,
 }
@@ -261,6 +265,7 @@ impl ClientConnection {
             shell_uses_endpoint_keybindings: false,
             dock_opt_in: false,
             last_dock_message: None,
+            last_pane_stack_message: None,
             writer,
         }
     }

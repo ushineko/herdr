@@ -481,6 +481,21 @@ pub struct PaneInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll: Option<PaneScrollInfo>,
     pub revision: u64,
+    /// Local patch (spec 002): set for members of a pane stack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<PaneStackInfo>,
+}
+
+/// Local patch (spec 002): a pane's place in its stack.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneStackInfo {
+    /// Identifies the stack while it exists: the public id of its first
+    /// member.
+    pub stack_id: String,
+    /// Position in the strip, from 0.
+    pub index: usize,
+    /// Whether this member is the one shown.
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

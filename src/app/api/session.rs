@@ -52,9 +52,9 @@ impl App {
                     layouts.push(layout);
                 }
                 panes.extend(
+                    // Local patch (spec 002): hidden stack members too.
                     ws.tabs[tab_idx]
-                        .layout
-                        .pane_ids()
+                        .all_pane_ids()
                         .into_iter()
                         .filter_map(|pane_id| pane_info(self, ws_idx, pane_id)),
                 );

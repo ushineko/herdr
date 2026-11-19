@@ -17,15 +17,12 @@ pub struct PaneStack {
     pub active: usize,
 }
 
-// Part of the API wired to keys, the API and rendering in part 3 of spec 002.
-#[allow(dead_code)]
 impl PaneStack {
     pub fn visible(&self) -> Option<PaneId> {
         self.panes.get(self.active).copied()
     }
 }
 
-#[allow(dead_code)]
 impl Tab {
     pub(crate) fn stack_of(&self, pane_id: PaneId) -> Option<&PaneStack> {
         self.stacks
@@ -123,40 +120,46 @@ impl Tab {
         true
     }
 
-    /// Make a member the visible pane of its stack and focus it. Returns
-    /// whether the pane is now visible (true for an unstacked layout pane).
-    pub(crate) fn show_pane(&mut self, pane_id: PaneId) -> bool {
+    /// Make a member the visible pane of its stack, keeping focus where it is
+    /// (it follows the slot if the slot was focused). Returns whether the pane
+    /// is now visible (true for an unstacked layout pane).
+    pub(crate) fn reveal_pane(&mut self, pane_id: PaneId) -> bool {
         let Some(index) = self
             .stacks
             .iter()
             .position(|stack| stack.panes.contains(&pane_id))
         else {
-            if !self.layout.pane_ids().contains(&pane_id) {
-                return false;
-            }
-            self.layout.focus_pane(pane_id);
-            return true;
+            return self.layout.pane_ids().contains(&pane_id);
         };
         let stack = &self.stacks[index];
         let Some(visible) = stack.visible() else {
             return false;
         };
-        if visible != pane_id {
-            let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
-                return false;
-            };
-            if !self.layout.replace_pane(visible, pane_id) {
-                return false;
-            }
-            self.stacks[index].active = position;
+        if visible == pane_id {
+            return true;
+        }
+        let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
+            return false;
+        };
+        if !self.layout.replace_pane(visible, pane_id) {
+            return false;
+        }
+        self.stacks[index].active = position;
+        true
+    }
+
+    /// Reveal a pane (see `reveal_pane`) and focus it.
+    pub(crate) fn show_pane(&mut self, pane_id: PaneId) -> bool {
+        if !self.reveal_pane(pane_id) {
+            return false;
         }
         self.layout.focus_pane(pane_id);
         true
     }
 
-    /// Show the next (or previous) member of `pane_id`'s stack, wrapping.
-    /// Returns the newly visible pane.
-    pub(crate) fn cycle_stack(&mut self, pane_id: PaneId, forward: bool) -> Option<PaneId> {
+    /// The next (or previous) member of `pane_id`'s stack after the visible
+    /// one, wrapping.
+    pub(crate) fn stack_neighbour(&self, pane_id: PaneId, forward: bool) -> Option<PaneId> {
         let stack = self.stack_of(pane_id)?;
         let len = stack.panes.len();
         let next = if forward {
@@ -164,7 +167,13 @@ impl Tab {
         } else {
             (stack.active + len - 1) % len
         };
-        let target = stack.panes[next];
+        stack.panes.get(next).copied()
+    }
+
+    /// Show the next (or previous) member and focus it. Returns it.
+    #[cfg(test)]
+    pub(crate) fn cycle_stack(&mut self, pane_id: PaneId, forward: bool) -> Option<PaneId> {
+        let target = self.stack_neighbour(pane_id, forward)?;
         self.show_pane(target).then_some(target)
     }
 
