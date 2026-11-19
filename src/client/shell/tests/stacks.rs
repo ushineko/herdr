@@ -237,3 +237,30 @@ fn the_pane_menu_offers_a_new_nested_tab_when_the_server_has_them() {
         "not offered by a server without nested tabs"
     );
 }
+
+#[test]
+fn right_clicking_a_strip_entry_opens_that_members_menu_for_rename() {
+    let mut state = stacked_state(true);
+    let (column, row) = strip_cell(&state, "pane_2");
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Right),
+        column,
+        row,
+    );
+    let labels = menu_labels(&state);
+    let rename = labels
+        .iter()
+        .position(|label| label == "Rename pane")
+        .expect("the member's pane menu");
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(rename, &mut outcome);
+    assert!(
+        matches!(
+            state.overlay.as_ref(),
+            Some(ClientShellOverlay::Rename(rename))
+                if matches!(&rename.target, ClientRenameTarget::Pane { pane_id, .. } if pane_id == "pane_2")
+        ),
+        "renaming the hidden member, not the visible one"
+    );
+}

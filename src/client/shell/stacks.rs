@@ -164,7 +164,8 @@ impl ClientShellState {
         true
     }
 
-    /// Mouse events over a strip: a left click shows that member, the wheel
+    /// Mouse events over a strip: a left click shows that member, a right
+    /// click opens that member's pane menu (rename, close, ...), the wheel
     /// cycles the stack. Returns whether the event was consumed.
     pub(super) fn handle_stack_mouse(
         &mut self,
@@ -184,6 +185,15 @@ impl ClientShellState {
         else {
             return false;
         };
+        if mouse.kind == MouseEventKind::Down(MouseButton::Right) {
+            if hit.dock {
+                self.open_dock_context_menu(hit.pane_id, mouse.column, mouse.row);
+            } else {
+                self.open_pane_context_menu(hit.pane_id, mouse.column, mouse.row);
+            }
+            outcome.repaint = true;
+            return true;
+        }
         if hit.dock {
             use crate::protocol::endpoint::DockControl;
             let control = match mouse.kind {

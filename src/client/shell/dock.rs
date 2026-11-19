@@ -490,7 +490,7 @@ impl ClientShellState {
         );
     }
 
-    fn open_dock_context_menu(&mut self, pane_id: String, x: u16, y: u16) {
+    pub(super) fn open_dock_context_menu(&mut self, pane_id: String, x: u16, y: u16) {
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
             target: ClientContextMenuTarget::DockPane {
                 pane_id,
