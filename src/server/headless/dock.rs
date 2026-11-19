@@ -53,6 +53,7 @@ impl HeadlessServer {
 
     /// Send the current dock to every opted-in client whose last copy differs.
     pub(super) fn stream_dock_surfaces(&mut self) {
+        self.app.state.dock.needs_redraw = false;
         let targets = self
             .clients
             .iter()

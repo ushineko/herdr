@@ -39,6 +39,8 @@ impl App {
         }
         self.state.theme_name = theme_name;
         self.state.palette = palette;
+        // Local patch: the dock is drawn with the palette (spec 001).
+        self.state.dock.needs_redraw = true;
         self.render_dirty.request_generic();
         self.render_notify.notify_one();
         true

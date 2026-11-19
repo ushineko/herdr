@@ -1000,7 +1000,9 @@ impl HeadlessServer {
             }
         }
 
-        self.stream_dock_surfaces();
+        if self.app.state.dock.needs_redraw {
+            self.stream_dock_surfaces();
+        }
 
         let (cols, rows) = self.effective_size;
         // Full-frame recovery is tracked per connection. A slow client must not

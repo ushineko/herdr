@@ -74,6 +74,14 @@ impl ClientShellState {
         self.dock_focused && !self.hits.dock_panes.is_empty()
     }
 
+    /// Give the keyboard back once the active machine shows no dock: it was
+    /// closed, reset, or the machine stopped offering one.
+    pub(super) fn release_dock_focus_if_gone(&mut self) {
+        if self.dock_layout_rows() == 0 {
+            self.dock_focused = false;
+        }
+    }
+
     fn focused_dock_pane_id(&self) -> Option<String> {
         self.active_dock_surface()?
             .panes
@@ -205,14 +213,16 @@ impl ClientShellState {
             A::ClosePane => DockControl::Close { pane_id: focused },
             A::Zoom => DockControl::ToggleZoom,
             A::FocusPaneLeft | A::FocusPaneRight | A::FocusPaneUp | A::FocusPaneDown => {
-                DockControl::FocusDirection {
-                    direction: dock_direction(action).expect("focus direction"),
-                }
+                let Some(direction) = dock_direction(action) else {
+                    return false;
+                };
+                DockControl::FocusDirection { direction }
             }
             A::ResizePaneLeft | A::ResizePaneRight | A::ResizePaneUp | A::ResizePaneDown => {
-                DockControl::Resize {
-                    direction: dock_direction(action).expect("resize direction"),
-                }
+                let Some(direction) = dock_direction(action) else {
+                    return false;
+                };
+                DockControl::Resize { direction }
             }
             _ => return false,
         };

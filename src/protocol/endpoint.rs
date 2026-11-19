@@ -92,6 +92,9 @@ pub enum DockDirection {
     Right,
     Up,
     Down,
+    /// A direction from a newer peer; ignored.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Client-to-server dock operations.
@@ -345,6 +348,14 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<DockControl>(r#"{"op":"from_the_future","x":1}"#).unwrap(),
             DockControl::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<DockControl>(r#"{"op":"resize","direction":"diagonal"}"#)
+                .unwrap(),
+            DockControl::Resize {
+                direction: DockDirection::Unknown
+            },
+            "a direction from a newer peer still parses"
         );
     }
 

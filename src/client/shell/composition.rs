@@ -339,10 +339,6 @@ impl ClientShellState {
             self.hits.tab_scroll_right = Rect::default();
         }
         let dock_hits = self.render_dock_chrome(&mut buffer, layout);
-        if dock_hits.panes.is_empty() {
-            // A dock that is not on screen cannot hold the keyboard.
-            self.dock_focused = false;
-        }
         self.hits.dock_rule = dock_hits.rule;
         self.hits.dock_panes = dock_hits.panes;
         self.hits.dock_splits = dock_hits.splits;
