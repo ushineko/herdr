@@ -10,6 +10,37 @@ impl ClientShellState {
             crate::input::KeybindMatch::Action(crate::input::KeybindAction::Detach) => {
                 outcome.detach = true;
             }
+            crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::ToggleSidebarLayout,
+            ) => {
+                self.sidebar_layout = match self.sidebar_layout {
+                    crate::config::SidebarLayoutConfig::Vertical => {
+                        crate::config::SidebarLayoutConfig::Horizontal
+                    }
+                    crate::config::SidebarLayoutConfig::Horizontal => {
+                        crate::config::SidebarLayoutConfig::Vertical
+                    }
+                };
+                // Claim the placement from config: once toggled, the choice is
+                // the client's and survives restart.
+                self.sidebar_layout_manual = true;
+                // The strip and the rail scroll in different units.
+                self.workspace_scroll = 0;
+                self.reveal_navigation_workspace = true;
+                self.invalidate_pane_surface();
+                outcome.repaint = true;
+                outcome.resize = true;
+                self.persist_chrome_preferences(outcome);
+            }
+            crate::input::KeybindMatch::Action(crate::input::KeybindAction::ToggleSidebar)
+                if matches!(
+                    self.sidebar_layout,
+                    crate::config::SidebarLayoutConfig::Horizontal
+                ) =>
+            {
+                // The bar has no collapsed form, so collapsing it would strand
+                // the user with no way to reopen it.
+            }
             crate::input::KeybindMatch::Action(crate::input::KeybindAction::ToggleSidebar) => {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
                 self.sidebar_collapsed_manual = true;

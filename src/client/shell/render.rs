@@ -267,6 +267,16 @@ pub(super) fn render_shell(
             &mut hits,
         );
     }
+    if layout.spaces_bar.height > 0 {
+        super::spaces_bar::render_spaces_bar(
+            buffer,
+            layout.spaces_bar,
+            snapshot,
+            config,
+            &mut state,
+            &mut hits,
+        );
+    }
     if layout.sidebar.width > 0 {
         if state.endpoints.len() > 1 {
             if state.sidebar_collapsed {

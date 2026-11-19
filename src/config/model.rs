@@ -142,6 +142,17 @@ pub enum SidebarCollapsedModeConfig {
     Hidden,
 }
 
+/// Experimental: sidebar placement. `vertical` is the default rail on the left;
+/// `horizontal` moves spaces to a single-row bar across the top of the screen
+/// with agent status folded into each space entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarLayoutConfig {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RightClickPassthroughModifierConfig(Option<KeyModifiers>);
 
@@ -455,6 +466,10 @@ pub struct KeysConfig {
     pub resize_pane_right: BindingConfig,
     /// Toggle sidebar collapse. Default: "prefix+b"
     pub toggle_sidebar: BindingConfig,
+    /// Experimental: switch between vertical and horizontal sidebar placement.
+    /// Default: "prefix+shift+b" — the shift variant of `toggle_sidebar`, which
+    /// collapses the sidebar on "prefix+b".
+    pub toggle_sidebar_layout: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
     /// Prefix-mode custom command bindings.
@@ -592,6 +607,8 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     toggle_sidebar: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    toggle_sidebar_layout: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -703,6 +720,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(resize_pane_up);
         apply_field!(resize_pane_right);
         apply_field!(toggle_sidebar);
+        apply_field!(toggle_sidebar_layout);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -808,6 +826,7 @@ impl KeysConfig {
         copy_effective_action_field!(resize_pane_up, keybinds.resize_pane_up);
         copy_effective_action_field!(resize_pane_right, keybinds.resize_pane_right);
         copy_effective_action_field!(toggle_sidebar, keybinds.toggle_sidebar);
+        copy_effective_action_field!(toggle_sidebar_layout, keybinds.toggle_sidebar_layout);
         copy_user_field!(indexed);
 
         profile
@@ -946,6 +965,8 @@ pub struct UiConfig {
     pub sidebar_start_collapsed: bool,
     /// Collapsed sidebar presentation. Default: compact.
     pub sidebar_collapsed_mode: SidebarCollapsedModeConfig,
+    /// Experimental sidebar placement. Default: vertical.
+    pub sidebar_layout: SidebarLayoutConfig,
     /// Terminal width at or below which Herdr uses the mobile single-column layout. Default: 64.
     pub mobile_width_threshold: u16,
     /// Capture mouse input for Herdr's mouse UI. Default: true.
@@ -1180,6 +1201,7 @@ impl Default for KeysConfig {
             resize_pane_up: BindingConfig::empty(),
             resize_pane_right: BindingConfig::empty(),
             toggle_sidebar: BindingConfig::one("prefix+b"),
+            toggle_sidebar_layout: BindingConfig::one("prefix+shift+b"),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),
@@ -1203,6 +1225,7 @@ impl Default for UiConfig {
             sidebar_max_width: 36,
             sidebar_start_collapsed: false,
             sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
+            sidebar_layout: SidebarLayoutConfig::default(),
             mobile_width_threshold: DEFAULT_MOBILE_WIDTH_THRESHOLD,
             mouse_capture: true,
             copy_on_select: true,

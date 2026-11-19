@@ -189,6 +189,10 @@ pub(crate) fn keybind_help_groups(
                     "resize pane right",
                 ),
                 entry(binding_label(&keybinds.toggle_sidebar), "toggle sidebar"),
+                entry(
+                    binding_label(&keybinds.toggle_sidebar_layout),
+                    "toggle sidebar placement",
+                ),
                 entry(binding_label(&keybinds.focus_pane_left), "focus pane left"),
                 entry(binding_label(&keybinds.focus_pane_down), "focus pane down"),
                 entry(binding_label(&keybinds.focus_pane_up), "focus pane up"),

@@ -900,6 +900,22 @@
           ]
         },
         {
+          "key": "keys.toggle_sidebar_layout",
+          "type": "string",
+          "default": "prefix+shift+b",
+          "description": "Experimental. Switches between vertical and horizontal sidebar placement. The shift variant of keys.toggle_sidebar."
+        },
+        {
+          "key": "ui.sidebar_layout",
+          "type": "enum",
+          "default": "vertical",
+          "description": "Experimental sidebar placement. \"vertical\" is the left rail; \"horizontal\" moves spaces to a bar across the top of the screen with agent status folded into each space entry.",
+          "values": [
+            "vertical",
+            "horizontal"
+          ]
+        },
+        {
           "key": "ui.mobile_width_threshold",
           "type": "integer",
           "default": "64",

@@ -18,6 +18,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) sidebar_max_width: u16,
     pub(super) sidebar_start_collapsed: bool,
     pub(super) sidebar_collapsed_mode: SidebarCollapsedModeConfig,
+    pub(super) sidebar_layout: crate::config::SidebarLayoutConfig,
     pub(super) mobile_width_threshold: u16,
     pub(super) tab_bar_position: TabBarPositionConfig,
     pub(super) hide_tab_bar_when_single_tab: bool,
@@ -56,6 +57,8 @@ pub(crate) struct ClientShellConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ClientShellLayout {
     pub sidebar: Rect,
+    /// Horizontal placement only: the spaces bar across the top. Empty otherwise.
+    pub spaces_bar: Rect,
     pub tab_bar: Rect,
     pub mobile_header: Rect,
     pub pane_surface: Rect,
@@ -101,6 +104,7 @@ pub(super) struct ShellHitMap {
     pub(super) agent_max_scroll: usize,
     pub(super) agent_sort_toggle: Rect,
     pub(super) sidebar_divider: Rect,
+    pub(super) spaces_bar: super::spaces_bar::SpacesBarView,
     pub(super) sidebar_section_divider: Rect,
     pub(super) sidebar_toggle: Rect,
     pub(super) new_workspace: Rect,
@@ -525,6 +529,8 @@ pub(super) enum ClientContextMenuAction {
     Zoom,
     ToggleRightClickPassthrough,
     ClosePane,
+    /// Focus the agent on the picker row that was chosen.
+    FocusAgent,
 }
 
 #[derive(Debug)]
@@ -548,6 +554,11 @@ pub(super) enum ClientContextMenuTarget {
         has_manual_label: bool,
         right_click_passthrough: bool,
     },
+    /// Agents folded into one space chip on the horizontal bar. Carries its own
+    /// rows because, unlike every other kind, its items are computed per open.
+    SpaceAgents {
+        agents: Vec<super::spaces_bar::SpacesBarAgentEntry>,
+    },
 }
 
 #[derive(Debug)]
@@ -559,7 +570,7 @@ pub(super) struct ClientContextMenuOverlay {
 }
 
 pub(super) struct ClientContextMenuItem {
-    pub(super) label: &'static str,
+    pub(super) label: String,
     pub(super) action: ClientContextMenuAction,
 }
 
@@ -871,6 +882,8 @@ pub(crate) struct ClientShellState {
     pub(super) popup_terminal_id: Option<String>,
     pub(super) sidebar_collapsed: bool,
     pub(super) sidebar_collapsed_manual: bool,
+    pub(super) sidebar_layout: crate::config::SidebarLayoutConfig,
+    pub(super) sidebar_layout_manual: bool,
     pub(super) sidebar_width: u16,
     pub(super) sidebar_width_manual: bool,
     pub(super) sidebar_section_split: f32,
@@ -1002,6 +1015,8 @@ impl ClientShellState {
         let sidebar_collapsed = preferences
             .sidebar_collapsed
             .unwrap_or(config.sidebar_start_collapsed);
+        let sidebar_layout_manual = preferences.sidebar_layout.is_some();
+        let sidebar_layout = preferences.sidebar_layout.unwrap_or(config.sidebar_layout);
         let (min_width, max_width) = crate::config::validated_sidebar_bounds(
             config.sidebar_min_width,
             config.sidebar_max_width,
@@ -1045,6 +1060,8 @@ impl ClientShellState {
             popup_terminal_id: None,
             sidebar_collapsed,
             sidebar_collapsed_manual: preferences.sidebar_collapsed.is_some(),
+            sidebar_layout,
+            sidebar_layout_manual,
             sidebar_width,
             sidebar_width_manual: preferences.sidebar_width.is_some(),
             sidebar_section_split,
@@ -1218,6 +1235,17 @@ impl ClientShellState {
         }
     }
 
+    /// The placement actually used for rendering. The horizontal bar is
+    /// single-endpoint chrome — it has no machine rail — so attached SSH hosts
+    /// fall back to the vertical sidebar without disturbing the stored choice.
+    pub(super) fn effective_sidebar_layout(&self) -> crate::config::SidebarLayoutConfig {
+        if self.endpoints.len() > 1 {
+            crate::config::SidebarLayoutConfig::Vertical
+        } else {
+            self.sidebar_layout
+        }
+    }
+
     pub(super) fn layout(&self, cols: u16, rows: u16) -> ClientShellLayout {
         self.config.layout(
             cols,
@@ -1225,6 +1253,7 @@ impl ClientShellState {
             self.sidebar_collapsed,
             self.focused_tab_count(),
             self.sidebar_width,
+            self.effective_sidebar_layout(),
         )
     }
 
