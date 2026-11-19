@@ -50,6 +50,35 @@ The vendored libghostty-vt pins an exact Zig version: **0.16.0** for herdr
 0.9.x (0.15.2 for 0.7.x and 0.8.x). Distribution packages often ship a
 different Zig, which fails in `build.rs`.
 
+## CI and releases
+
+GitHub Actions in this fork run only two of upstream's workflows; the rest are
+disabled in the repository settings (Actions → each workflow → Disable), so
+nothing posts to issues, deploys the website, or publishes on a `v*` tag.
+
+| Workflow | State | Why |
+| --- | --- | --- |
+| `ci.yml` | enabled | Lint and tests on Linux, macOS and Windows for every pull request. |
+| `build-artifacts-manual.yml` | enabled | Release binaries, started by `ushineko/scripts/release.sh`. |
+| `pr-gate.yml` | disabled | Upstream's gate closes pull requests from non-maintainers. |
+| `release.yml`, `preview.yml` | disabled | Upstream's release pipeline (signing, Homebrew, website). |
+| others | disabled | Upstream infrastructure (website deploy, nix, issue labels). |
+
+A new herdr release can add workflows; disable any new one that is not needed.
+Workflow files are left unchanged in the tree so rebases stay clean.
+
+To release, from a checkout of this fork:
+
+```bash
+ushineko/scripts/release.sh ushineko-v0.9.5.1
+```
+
+It tags `ushineko/features`, runs the artifact build for every platform with
+the settings herdr's own releases use (libghostty-vt `ReleaseFast`, SIMD on),
+and publishes a GitHub Release with the binaries, their `BUILD_INFO.txt` and a
+`SHA256SUMS`. Hosts install by downloading the binary for their platform
+instead of building locally.
+
 ## Validation
 
 Clear herdr's environment first. Run from inside a herdr pane, the
