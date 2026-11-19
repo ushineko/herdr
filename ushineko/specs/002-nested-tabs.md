@@ -336,14 +336,18 @@ in the audit.
       swap by a hidden id (tests).
 - [ ] Switching the visible pane carries focus and previous focus, and bumps
       the client projection revision.
-- [ ] Closing, moving or the exit of any member of a one-slot stack removes
+- [x] Closing, moving or the exit of any member of a one-slot stack removes
       only that pane; the tab and workspace stay (audit theme A, tested for
-      each close, move and death path).
+      each close, move and death path). (Part 1:
+      `a_member_of_a_one_slot_stack_is_not_the_last_pane`,
+      `closing_a_member_of_a_one_slot_stack_needs_no_workspace_confirmation`.)
 - [ ] Live handoff between two patched builds carries stacks: same members,
       visible pane and processes (integration test).
-- [ ] The workspace and app invariant checks are extended for stacks, and
+- [x] The workspace and app invariant checks are extended for stacks, and
       pass in every existing test, the new ones, and against the adversarial
-      identity fixtures extended with stacks.
+      identity fixtures extended with stacks. (Part 1:
+      `Tab::assert_stack_invariants_for_test`,
+      `Workspace::test_adversarial_identity_state_with_stacks`.)
 
 ### JSON API
 - [ ] `pane list` lists hidden panes, with the optional `stack` object on
@@ -399,6 +403,25 @@ in the audit.
       output and that `pane list` reports both with their `stack` objects.
 - [ ] An integration test restarts the server and asserts the stack is
       restored, with the same visible pane.
+
+## Implementation notes
+
+**Part 1 (model and lifecycle), 2026-11-19.**
+`src/workspace/stack.rs` holds `PaneStack` and the stack operations on `Tab`
+(`stack_existing_pane`, `show_pane`, `cycle_stack`, `unstack_pane`,
+`all_pane_ids`, `is_hidden_pane`, `slot_leaf`); `TileLayout::replace_pane`
+swaps a leaf's id with focus and previous focus following.
+`Workspace::stack_pane_shell` spawns through the split path and folds the new
+leaf into the target slot, so spawn, environment and pane numbering are
+shared with splits. "Last pane" now counts pane states in
+`Workspace::{remove_pane, close_pane, take_pane_for_move, close_focused}`,
+`Tab::detach_pane`, the close-confirmation checks and the API's
+layout-update check. Plugin cleanup, worktree-removal shutdown and the
+agent-resume terminal lookup use `all_pane_ids`. Moving a stacked pane moves
+that pane only, its slot passing to the next member; moving a whole slot is
+built on this in part 3. Stacks are not yet saved or restored (part 2), and
+nothing outside tests creates one (part 3). Verification: lint clean, nextest
+4134 passed, 16 stack tests; six deliberate breakages, each caught.
 
 ## Test strategy (for review before tests are written)
 

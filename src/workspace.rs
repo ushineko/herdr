@@ -17,6 +17,7 @@ use crate::terminal::{TerminalId, TerminalRuntime, TerminalRuntimeRegistry, Term
 
 mod aggregate;
 mod git;
+mod stack;
 mod tab;
 
 use self::git::git_status_cache_key_for_space;
@@ -26,6 +27,7 @@ pub use self::{
         derive_label_from_cwd, fallback_label_from_cwd, git_branch, git_space_metadata,
         git_status_cache_key, GitSpaceMetadata, GitStatusCacheEntry, GitStatusRefreshDemand,
     },
+    stack::PaneStack,
     tab::{NewPane, Tab},
 };
 
@@ -721,6 +723,57 @@ impl Workspace {
         )
     }
 
+    /// Local patch (spec 002): start a shell as a new member of `pane_id`'s
+    /// slot, shown and focused. It is spawned as a split and folded into the
+    /// slot, so it shares the split path's spawn, environment and numbering.
+    // Wired to keys and the API in part 3 of spec 002.
+    #[allow(clippy::too_many_arguments, dead_code)]
+    pub fn stack_pane_shell(
+        &mut self,
+        pane_id: PaneId,
+        rows: u16,
+        cols: u16,
+        cwd: Option<PathBuf>,
+        scrollback_limit_bytes: usize,
+        host_terminal_theme: crate::terminal_theme::TerminalTheme,
+        host_terminal_appearance: Option<crate::terminal_theme::HostAppearance>,
+        shell_config: crate::pane::PaneShellConfig<'_>,
+        extra_env: Vec<(String, String)>,
+    ) -> Option<std::io::Result<(usize, crate::workspace::tab::NewPane)>> {
+        let leaf = {
+            let tab_idx = self.find_tab_index_for_pane(pane_id)?;
+            self.tabs[tab_idx].slot_leaf(pane_id)?
+        };
+        let result = self.split_pane_with_runtime(
+            leaf,
+            Direction::Horizontal,
+            None,
+            rows,
+            cols,
+            cwd,
+            scrollback_limit_bytes,
+            host_terminal_theme,
+            host_terminal_appearance,
+            shell_config,
+            extra_env,
+            false,
+            None,
+        )?;
+        let (tab_idx, new_pane) = match result {
+            Ok(created) => created,
+            Err(err) => return Some(Err(err)),
+        };
+        if !self.tabs[tab_idx].stack_existing_pane(leaf, new_pane.pane_id) {
+            // Unreachable while the split just made it a sibling leaf; leave it
+            // as a split rather than lose the process.
+            tracing::warn!(
+                pane = new_pane.pane_id.raw(),
+                "stack: new pane left as a split"
+            );
+        }
+        Some(Ok((tab_idx, new_pane)))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn split_pane_argv_command(
         &mut self,
@@ -849,10 +902,7 @@ impl Workspace {
     /// Close the focused pane. Returns true if the workspace should close.
     #[cfg(test)]
     pub fn close_focused(&mut self) -> bool {
-        let pane_count = self
-            .active_tab()
-            .map(|tab| tab.layout.pane_count())
-            .unwrap_or(0);
+        let pane_count = self.active_tab().map(|tab| tab.panes.len()).unwrap_or(0);
         let tab_count = self.tabs.len();
         if pane_count <= 1 {
             return tab_count <= 1 || self.close_active_tab_and_report();
@@ -870,7 +920,8 @@ impl Workspace {
         let Some(tab_idx) = self.find_tab_index_for_pane(pane_id) else {
             return false;
         };
-        let pane_count = self.tabs[tab_idx].layout.pane_count();
+        // Local patch (spec 002): count pane states, not layout leaves.
+        let pane_count = self.tabs[tab_idx].panes.len();
         let tab_count = self.tabs.len();
         if pane_count <= 1 {
             if tab_count <= 1 {
@@ -894,7 +945,8 @@ impl Workspace {
 
     pub(crate) fn take_pane_for_move(&mut self, pane_id: PaneId) -> Option<TakenPane> {
         let tab_idx = self.find_tab_index_for_pane(pane_id)?;
-        let pane_count = self.tabs[tab_idx].layout.pane_count();
+        // Local patch (spec 002): count pane states, not layout leaves.
+        let pane_count = self.tabs[tab_idx].panes.len();
         if pane_count <= 1 {
             let mut tab = self.tabs.remove(tab_idx);
             let moved = tab.take_pane_for_move(pane_id)?;
@@ -1113,7 +1165,8 @@ impl Workspace {
             Some(idx) => idx,
             None => return false,
         };
-        let pane_count = self.tabs[tab_idx].layout.pane_count();
+        // Local patch (spec 002): count pane states, not layout leaves.
+        let pane_count = self.tabs[tab_idx].panes.len();
         let tab_count = self.tabs.len();
         if pane_count <= 1 {
             if tab_count <= 1 {
@@ -1184,6 +1237,7 @@ impl Workspace {
             panes,
             runtimes: HashMap::new(),
             zoomed: false,
+            stacks: Vec::new(),
             events,
             render_notify,
             render_dirty,
@@ -1240,6 +1294,7 @@ impl Workspace {
             panes,
             runtimes: HashMap::new(),
             zoomed: false,
+            stacks: Vec::new(),
             events,
             render_notify,
             render_dirty,
@@ -1341,12 +1396,9 @@ impl Workspace {
                 tab_idx,
                 tab.layout.focused()
             );
-            let pane_set: std::collections::HashSet<_> = tab.panes.keys().copied().collect();
-            assert_eq!(
-                layout_set, pane_set,
-                "workspace {} tab {} layout panes must exactly match pane states",
-                self.id, tab_idx
-            );
+            // Local patch (spec 002): panes are the layout leaves plus hidden
+            // stack members.
+            tab.assert_stack_invariants_for_test(&self.id, tab_idx);
 
             for (pane_id, pane) in &tab.panes {
                 assert!(

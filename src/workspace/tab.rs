@@ -46,6 +46,9 @@ pub struct Tab {
     #[cfg(test)]
     pub runtimes: HashMap<PaneId, TerminalRuntime>,
     pub zoomed: bool,
+    /// Local patch: pane stacks in this tab (spec 002). Hidden members are in
+    /// `panes` but not in `layout`.
+    pub stacks: Vec<super::PaneStack>,
     pub events: mpsc::Sender<AppEvent>,
     pub(crate) render_notify: Arc<Notify>,
     pub(crate) render_dirty: Arc<RenderSignal>,
@@ -188,6 +191,7 @@ impl Tab {
                 #[cfg(test)]
                 runtimes: HashMap::new(),
                 zoomed: false,
+                stacks: Vec::new(),
                 events,
                 render_notify,
                 render_dirty,
@@ -451,6 +455,7 @@ impl Tab {
             #[cfg(test)]
             runtimes: HashMap::new(),
             zoomed: false,
+            stacks: Vec::new(),
             events,
             render_notify,
             render_dirty,
@@ -462,12 +467,8 @@ impl Tab {
             return None;
         }
 
-        if self.layout.pane_count() > 1 {
-            let next_root = self.promoted_root_if_needed(pane_id);
-            self.layout.close_pane(pane_id);
-            if let Some(next_root) = next_root {
-                self.root_pane = next_root;
-            }
+        if self.panes.len() > 1 {
+            self.detach_from_layout(pane_id);
         }
 
         let pane_state = self.panes.remove(&pane_id)?;
@@ -499,28 +500,33 @@ impl Tab {
     }
 
     fn detach_pane(&mut self, pane_id: PaneId) -> Option<DetachedPane> {
-        if self.layout.pane_count() <= 1 {
+        // Local patch (spec 002): a tab's last pane is its last pane state, not
+        // its last layout leaf, which may hold a stack.
+        if self.panes.len() <= 1 || !self.panes.contains_key(&pane_id) {
             return None;
         }
 
-        let next_root = self.promoted_root_if_needed(pane_id);
-
-        self.layout.close_pane(pane_id);
+        self.detach_from_layout(pane_id);
 
         let pane = self.panes.remove(&pane_id)?;
         let terminal_id = pane.attached_terminal_id;
         self.zoomed = false;
-        if let Some(next_root) = next_root {
-            self.root_pane = next_root;
-        }
         Some((pane_id, terminal_id))
     }
 
-    fn promoted_root_if_needed(&self, closing: PaneId) -> Option<PaneId> {
-        if self.root_pane != closing {
-            return None;
+    /// Take a pane out of the layout, or out of its stack (the slot passing
+    /// to a neighbour), promoting a new root pane when it was the root.
+    fn detach_from_layout(&mut self, pane_id: PaneId) {
+        if !self.unstack_pane(pane_id) {
+            self.layout.close_pane(pane_id);
         }
-        self.layout.pane_ids().into_iter().find(|id| *id != closing)
+        if self.root_pane == pane_id {
+            // Leaf order is unchanged by a close, so this is the first other
+            // leaf, as before; a stack's slot now holds its heir.
+            if let Some(next_root) = self.layout.pane_ids().into_iter().next() {
+                self.root_pane = next_root;
+            }
+        }
     }
 
     pub fn terminal_id(&self, pane_id: PaneId) -> Option<&TerminalId> {

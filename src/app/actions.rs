@@ -588,7 +588,8 @@ impl AppState {
             .get(ws_idx)
             .into_iter()
             .flat_map(|ws| &ws.tabs)
-            .flat_map(|tab| tab.layout.pane_ids())
+            // Local patch (spec 002): hidden stack members too.
+            .flat_map(|tab| tab.all_pane_ids())
             .collect()
     }
 
@@ -610,7 +611,8 @@ impl AppState {
         self.workspaces
             .get(ws_idx)
             .and_then(|ws| ws.tabs.get(tab_idx))
-            .map(|tab| tab.layout.pane_ids())
+            // Local patch (spec 002): hidden stack members too.
+            .map(|tab| tab.all_pane_ids())
             .unwrap_or_default()
     }
 
@@ -929,7 +931,8 @@ impl AppState {
         self.workspaces.get(ws_idx).is_some_and(|ws| {
             let pane_count = ws
                 .active_tab()
-                .map(|tab| tab.layout.pane_count())
+                // Local patch (spec 002): pane states, not leaves (stacks).
+                .map(|tab| tab.panes.len())
                 .unwrap_or(0);
             pane_count <= 1 && ws.tabs.len() <= 1
         })
@@ -937,9 +940,8 @@ impl AppState {
 
     pub(crate) fn close_pane_would_close_workspace(&self, ws_idx: usize, pane_id: PaneId) -> bool {
         self.workspaces.get(ws_idx).is_some_and(|ws| {
-            ws.find_tab_index_for_pane(pane_id).is_some_and(|tab_idx| {
-                ws.tabs[tab_idx].layout.pane_count() <= 1 && ws.tabs.len() <= 1
-            })
+            ws.find_tab_index_for_pane(pane_id)
+                .is_some_and(|tab_idx| ws.tabs[tab_idx].panes.len() <= 1 && ws.tabs.len() <= 1)
         })
     }
 

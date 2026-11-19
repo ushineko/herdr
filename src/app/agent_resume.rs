@@ -188,7 +188,8 @@ impl App {
         }
         let Some((pane_id, cwd, plan)) = self.state.workspaces.iter().find_map(|ws| {
             ws.tabs.iter().find_map(|tab| {
-                tab.layout.pane_ids().into_iter().find_map(|pane_id| {
+                // Local patch (spec 002): hidden stack members too.
+                tab.all_pane_ids().into_iter().find_map(|pane_id| {
                     let pane = tab.panes.get(&pane_id)?;
                     if &pane.attached_terminal_id != terminal_id {
                         return None;

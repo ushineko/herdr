@@ -276,6 +276,27 @@ impl TileLayout {
         }
     }
 
+    /// Local patch: pane stacks (spec 002). Put `new` in `old`'s leaf,
+    /// keeping the tree, ratios and split paths; focus and previous focus
+    /// follow the slot. False unless `old` is a leaf and `new` is not.
+    pub fn replace_pane(&mut self, old: PaneId, new: PaneId) -> bool {
+        let ids = self.pane_ids();
+        if old == new || !ids.contains(&old) || ids.contains(&new) {
+            return false;
+        }
+        let Some(node) = find_pane_mut(&mut self.root, old) else {
+            return false;
+        };
+        *node = Node::Pane(new);
+        if self.focus == old {
+            self.focus = new;
+        }
+        if self.prev_focus == Some(old) {
+            self.prev_focus = Some(new);
+        }
+        true
+    }
+
     /// Swap two pane ids in the layout tree while preserving split shape and
     /// ratios. Returns true only when both panes exist and are different.
     pub fn swap_panes(&mut self, first: PaneId, second: PaneId) -> bool {
@@ -974,6 +995,46 @@ mod tests {
         assert_eq!(after_rects[1], (pane(4), before_rects[1].1));
         assert_eq!(after_rects[2], before_rects[2]);
         assert_eq!(after_rects[3], (pane(2), before_rects[3].1));
+    }
+
+    #[test]
+    fn replace_pane_keeps_the_tree_ratios_and_focus() {
+        let (mut layout, left) = TileLayout::new();
+        let right = layout.split_focused_with_ratio(Direction::Horizontal, 0.3);
+        let area = Rect::new(0, 0, 100, 20);
+        let before = layout.panes(area);
+        let stacked = PaneId::alloc();
+
+        assert!(layout.replace_pane(right, stacked));
+        assert_eq!(layout.pane_ids(), vec![left, stacked]);
+        assert_eq!(layout.focused(), stacked, "focus follows the slot");
+        let after = layout.panes(area);
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].rect, before[0].rect);
+        assert_eq!(after[1].rect, before[1].rect, "the slot keeps its rect");
+
+        layout.focus_pane(left);
+        assert!(layout.replace_pane(stacked, right));
+        assert_eq!(
+            layout.prev_focus,
+            Some(right),
+            "previous focus follows the slot"
+        );
+        assert!(layout.close_focused());
+        assert_eq!(layout.focused(), right, "previous focus follows too");
+    }
+
+    #[test]
+    fn replace_pane_refuses_missing_or_duplicate_ids() {
+        let (mut layout, left) = TileLayout::new();
+        let right = layout.split_focused(Direction::Horizontal);
+        assert!(!layout.replace_pane(left, left));
+        assert!(!layout.replace_pane(PaneId::alloc(), PaneId::alloc()));
+        assert!(
+            !layout.replace_pane(left, right),
+            "new must not already be a leaf"
+        );
+        assert_eq!(layout.pane_ids(), vec![left, right]);
     }
 
     #[test]

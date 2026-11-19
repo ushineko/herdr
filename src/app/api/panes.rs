@@ -2203,8 +2203,9 @@ impl App {
             .get(ws_idx)?
             .tabs
             .get(tab_idx)?
-            .layout
-            .pane_count();
+            // Local patch (spec 002): pane states, not leaves (stacks).
+            .panes
+            .len();
         (pane_count > 1).then_some((ws_idx, tab_idx))
     }
 }
