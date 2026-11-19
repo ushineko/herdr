@@ -19,6 +19,8 @@ pub(super) struct StackStripHit {
     pub(super) pane_id: String,
     /// The visible member of the entry's stack.
     pub(super) visible: String,
+    /// The stack is in the dock, so it is driven by dock controls.
+    pub(super) dock: bool,
 }
 
 impl ClientShellState {
@@ -73,6 +75,9 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) -> bool {
         use crate::input::KeybindAction as A;
+        if self.dock_has_focus() {
+            return self.dock_stack_binding(action, outcome);
+        }
         let pane_id = self.focused_pane_id();
         let control = match action {
             A::StackNewPane => PaneStackControl::New { pane_id },
@@ -100,10 +105,59 @@ impl ClientShellState {
                     rect: Rect::new(pane_surface.x.saturating_add(member.x), y, member.width, 1),
                     pane_id: member.pane_id.clone(),
                     visible: stack.visible.clone(),
+                    dock: false,
                 });
             }
         }
         hits
+    }
+
+    /// Strip entries of the dock's stacks, placed in the dock's content area.
+    pub(super) fn dock_stack_strip_hits(&self, dock_content: Rect) -> Vec<StackStripHit> {
+        let Some(surface) = self.active_dock_surface() else {
+            return Vec::new();
+        };
+        surface
+            .stacks
+            .iter()
+            .flat_map(|stack| {
+                stack.members.iter().map(move |member| StackStripHit {
+                    rect: Rect::new(
+                        dock_content.x.saturating_add(member.x),
+                        dock_content.y.saturating_add(stack.strip.y),
+                        member.width,
+                        1,
+                    ),
+                    pane_id: member.pane_id.clone(),
+                    visible: stack.visible.clone(),
+                    dock: true,
+                })
+            })
+            .collect()
+    }
+
+    /// Stack keys while the dock has the keyboard act on the dock's stack.
+    fn dock_stack_binding(
+        &mut self,
+        action: crate::input::KeybindAction,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        use crate::input::KeybindAction as A;
+        use crate::protocol::endpoint::DockControl;
+        let Some(pane_id) = self.focused_dock_pane_id() else {
+            return true;
+        };
+        let control = match action {
+            A::StackNewPane => DockControl::StackNew { pane_id },
+            A::StackNext | A::StackPrevious => DockControl::StackCycle {
+                pane_id,
+                forward: action == A::StackNext,
+            },
+            _ => return false,
+        };
+        self.push_dock_control(control, outcome);
+        outcome.repaint = true;
+        true
     }
 
     /// Mouse events over a strip: a left click shows that member, the wheel
@@ -126,6 +180,22 @@ impl ClientShellState {
         else {
             return false;
         };
+        if hit.dock {
+            use crate::protocol::endpoint::DockControl;
+            let control = match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => DockControl::Focus {
+                    pane_id: hit.pane_id,
+                },
+                MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => DockControl::StackCycle {
+                    pane_id: hit.visible,
+                    forward: mouse.kind == MouseEventKind::ScrollDown,
+                },
+                _ => return true,
+            };
+            self.push_dock_control(control, outcome);
+            outcome.repaint = true;
+            return true;
+        }
         let control = match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => PaneStackControl::Show {
                 pane_id: hit.pane_id,

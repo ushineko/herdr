@@ -54,6 +54,9 @@ pub struct DockSurface {
     pub splits: Vec<DockSurfaceSplit>,
     #[serde(default)]
     pub zoomed: bool,
+    /// Spec 002: pane stacks in the dock, with strips in dock coordinates.
+    #[serde(default)]
+    pub stacks: Vec<PaneStackStrip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +141,16 @@ pub enum DockControl {
     },
     ResetRows,
     Reset,
+    /// Spec 002: start a shell as a new member of the pane's stack.
+    StackNew {
+        pane_id: String,
+    },
+    /// Spec 002: show the next (or previous) member of the pane's stack.
+    StackCycle {
+        pane_id: String,
+        #[serde(default = "default_true")]
+        forward: bool,
+    },
     /// A newer client's operation this server does not know.
     #[serde(other)]
     Unknown,

@@ -46,6 +46,9 @@ pub struct DockSnapshot {
     pub focused: Option<u32>,
     #[serde(default)]
     pub zoomed: bool,
+    /// Pane stacks in the dock (spec 002). Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<StackSnapshot>,
 }
 
 /// One saved dock pane. `label` and `command` together mark a seeded pane.
@@ -626,6 +629,7 @@ mod tests {
             ]),
             focused: Some(8),
             zoomed: false,
+            stacks: Vec::new(),
         };
         let json = dock_session_json(&format!(
             ",\"dock\":{}",

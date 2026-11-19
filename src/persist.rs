@@ -18,7 +18,7 @@ pub(crate) use self::restore::restored_worktree_space_membership;
 pub use self::restore::{handoff_pane_aliases, restore_handoff};
 pub use self::snapshot::{
     capture, capture_history, DirectionSnapshot, DockPaneSnapshot, DockSnapshot, LayoutSnapshot,
-    SessionHistorySnapshot, SessionSnapshot, TabSnapshot, WorkspaceSnapshot,
+    SessionHistorySnapshot, SessionSnapshot, StackSnapshot, TabSnapshot, WorkspaceSnapshot,
 };
 
 /// Local patch: dock layouts use the same layout tree format as tabs.

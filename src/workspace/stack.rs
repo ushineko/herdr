@@ -7,7 +7,7 @@
 //! leaf's id in place, so the rest of the layout never moves.
 
 use super::Tab;
-use crate::layout::PaneId;
+use crate::layout::{PaneId, TileLayout};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaneStack {
@@ -23,26 +23,187 @@ impl PaneStack {
     }
 }
 
+// Stack logic over a layout and its stacks, shared by workspace tabs and the
+// dock (spec 002).
+
+pub(crate) fn stack_of(stacks: &[PaneStack], pane_id: PaneId) -> Option<&PaneStack> {
+    stacks.iter().find(|stack| stack.panes.contains(&pane_id))
+}
+
+/// The layout leaves in layout order, then hidden members in strip order.
+pub(crate) fn all_ids(layout: &TileLayout, stacks: &[PaneStack]) -> Vec<PaneId> {
+    let mut ids = layout.pane_ids();
+    for stack in stacks {
+        for (index, pane_id) in stack.panes.iter().enumerate() {
+            if index != stack.active {
+                ids.push(*pane_id);
+            }
+        }
+    }
+    ids
+}
+
+pub(crate) fn is_hidden(stacks: &[PaneStack], pane_id: PaneId) -> bool {
+    stack_of(stacks, pane_id).is_some_and(|stack| stack.visible() != Some(pane_id))
+}
+
+/// The leaf that holds a pane's slot: the pane itself, or its stack's visible
+/// member.
+pub(crate) fn slot_leaf(
+    layout: &TileLayout,
+    stacks: &[PaneStack],
+    pane_id: PaneId,
+) -> Option<PaneId> {
+    if let Some(stack) = stack_of(stacks, pane_id) {
+        return stack.visible();
+    }
+    layout.pane_ids().contains(&pane_id).then_some(pane_id)
+}
+
+/// The member after (or before) the visible one, wrapping.
+pub(crate) fn neighbour(stacks: &[PaneStack], pane_id: PaneId, forward: bool) -> Option<PaneId> {
+    let stack = stack_of(stacks, pane_id)?;
+    let len = stack.panes.len();
+    let next = if forward {
+        (stack.active + 1) % len
+    } else {
+        (stack.active + len - 1) % len
+    };
+    stack.panes.get(next).copied()
+}
+
+/// Put `pane_id`, which is not in the layout, into `target`'s slot as the last
+/// member of its stack, shown and focused. A plain slot becomes a stack.
+pub(crate) fn push_member(
+    layout: &mut TileLayout,
+    stacks: &mut Vec<PaneStack>,
+    target: PaneId,
+    pane_id: PaneId,
+) -> bool {
+    let Some(leaf) = slot_leaf(layout, stacks, target) else {
+        return false;
+    };
+    if stack_of(stacks, pane_id).is_some() || !layout.replace_pane(leaf, pane_id) {
+        return false;
+    }
+    match stacks.iter_mut().find(|stack| stack.panes.contains(&leaf)) {
+        Some(stack) => {
+            stack.panes.push(pane_id);
+            stack.active = stack.panes.len() - 1;
+        }
+        None => stacks.push(PaneStack {
+            panes: vec![leaf, pane_id],
+            active: 1,
+        }),
+    }
+    layout.focus_pane(pane_id);
+    true
+}
+
+/// Make a member visible, keeping focus where it is (it follows the slot if
+/// the slot was focused). True when the pane is now visible.
+pub(crate) fn reveal(layout: &mut TileLayout, stacks: &mut [PaneStack], pane_id: PaneId) -> bool {
+    let Some(index) = stacks
+        .iter()
+        .position(|stack| stack.panes.contains(&pane_id))
+    else {
+        return layout.pane_ids().contains(&pane_id);
+    };
+    let stack = &stacks[index];
+    let Some(visible) = stack.visible() else {
+        return false;
+    };
+    if visible == pane_id {
+        return true;
+    }
+    let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
+        return false;
+    };
+    if !layout.replace_pane(visible, pane_id) {
+        return false;
+    }
+    stacks[index].active = position;
+    true
+}
+
+/// Take a pane out of its stack, keeping the slot: a visible member hands its
+/// leaf to its neighbour (the next member, else the previous one), and a stack
+/// left with one member becomes a plain pane. False when the pane is not
+/// stacked, so the caller removes it from the layout instead.
+pub(crate) fn unstack(
+    layout: &mut TileLayout,
+    stacks: &mut Vec<PaneStack>,
+    pane_id: PaneId,
+) -> bool {
+    let Some(index) = stacks
+        .iter()
+        .position(|stack| stack.panes.contains(&pane_id))
+    else {
+        return false;
+    };
+    let stack = &mut stacks[index];
+    let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
+        return false;
+    };
+    if position == stack.active {
+        let heir = if position + 1 < stack.panes.len() {
+            position + 1
+        } else {
+            position - 1
+        };
+        let heir_id = stack.panes[heir];
+        layout.replace_pane(pane_id, heir_id);
+        let stack = &mut stacks[index];
+        stack.panes.remove(position);
+        // The next member slides into `position`; the previous one keeps its
+        // index.
+        stack.active = heir.min(position);
+    } else {
+        stack.panes.remove(position);
+        if position < stack.active {
+            stack.active -= 1;
+        }
+    }
+    if stacks[index].panes.len() < 2 {
+        stacks.remove(index);
+    }
+    true
+}
+
+/// Geometry for every pane: `infos` (the leaves) plus a copy of each hidden
+/// member's visible member entry, so hidden panes are sized alike.
+pub(crate) fn with_hidden(
+    stacks: &[PaneStack],
+    mut infos: Vec<crate::layout::PaneInfo>,
+) -> Vec<crate::layout::PaneInfo> {
+    for stack in stacks {
+        let Some(visible) = stack.visible() else {
+            continue;
+        };
+        let Some(info) = infos.iter().find(|info| info.id == visible).cloned() else {
+            continue;
+        };
+        for (index, pane_id) in stack.panes.iter().enumerate() {
+            if index != stack.active {
+                let mut hidden = info.clone();
+                hidden.id = *pane_id;
+                infos.push(hidden);
+            }
+        }
+    }
+    infos
+}
+
 impl Tab {
     pub(crate) fn stack_of(&self, pane_id: PaneId) -> Option<&PaneStack> {
-        self.stacks
-            .iter()
-            .find(|stack| stack.panes.contains(&pane_id))
+        stack_of(&self.stacks, pane_id)
     }
 
     /// Every pane of the tab: the layout leaves in layout order, then hidden
     /// stack members in strip order. Use it where a pane must not be missed
     /// (process lifecycle, cleanup); geometry uses the layout.
     pub(crate) fn all_pane_ids(&self) -> Vec<PaneId> {
-        let mut ids = self.layout.pane_ids();
-        for stack in &self.stacks {
-            for (index, pane_id) in stack.panes.iter().enumerate() {
-                if index != stack.active {
-                    ids.push(*pane_id);
-                }
-            }
-        }
-        ids
+        all_ids(&self.layout, &self.stacks)
     }
 
     /// Pane geometry for every pane: `infos` (the layout leaves) plus, for each
@@ -50,39 +211,20 @@ impl Tab {
     /// sized like the visible one, so switching never reflows.
     pub(crate) fn with_hidden_members(
         &self,
-        mut infos: Vec<crate::layout::PaneInfo>,
+        infos: Vec<crate::layout::PaneInfo>,
     ) -> Vec<crate::layout::PaneInfo> {
-        for stack in &self.stacks {
-            let Some(visible) = stack.visible() else {
-                continue;
-            };
-            let Some(info) = infos.iter().find(|info| info.id == visible).cloned() else {
-                continue;
-            };
-            for (index, pane_id) in stack.panes.iter().enumerate() {
-                if index != stack.active {
-                    let mut hidden = info.clone();
-                    hidden.id = *pane_id;
-                    infos.push(hidden);
-                }
-            }
-        }
-        infos
+        with_hidden(&self.stacks, infos)
     }
 
     /// Whether the pane is a hidden member of a stack in this tab.
     pub(crate) fn is_hidden_pane(&self, pane_id: PaneId) -> bool {
-        self.stack_of(pane_id)
-            .is_some_and(|stack| stack.visible() != Some(pane_id))
+        is_hidden(&self.stacks, pane_id)
     }
 
     /// The layout leaf that holds this pane's slot: the pane itself, or the
     /// visible member of its stack.
     pub(crate) fn slot_leaf(&self, pane_id: PaneId) -> Option<PaneId> {
-        if let Some(stack) = self.stack_of(pane_id) {
-            return stack.visible();
-        }
-        self.layout.pane_ids().contains(&pane_id).then_some(pane_id)
+        slot_leaf(&self.layout, &self.stacks, pane_id)
     }
 
     /// Fold `pane_id`, a layout leaf of this tab, into `target`'s slot as the
@@ -99,53 +241,14 @@ impl Tab {
         {
             return false;
         }
-        if !self.layout.replace_pane(leaf, pane_id) {
-            return false;
-        }
-        match self
-            .stacks
-            .iter_mut()
-            .find(|stack| stack.panes.contains(&leaf))
-        {
-            Some(stack) => {
-                stack.panes.push(pane_id);
-                stack.active = stack.panes.len() - 1;
-            }
-            None => self.stacks.push(PaneStack {
-                panes: vec![leaf, pane_id],
-                active: 1,
-            }),
-        }
-        self.layout.focus_pane(pane_id);
-        true
+        push_member(&mut self.layout, &mut self.stacks, leaf, pane_id)
     }
 
     /// Make a member the visible pane of its stack, keeping focus where it is
     /// (it follows the slot if the slot was focused). Returns whether the pane
     /// is now visible (true for an unstacked layout pane).
     pub(crate) fn reveal_pane(&mut self, pane_id: PaneId) -> bool {
-        let Some(index) = self
-            .stacks
-            .iter()
-            .position(|stack| stack.panes.contains(&pane_id))
-        else {
-            return self.layout.pane_ids().contains(&pane_id);
-        };
-        let stack = &self.stacks[index];
-        let Some(visible) = stack.visible() else {
-            return false;
-        };
-        if visible == pane_id {
-            return true;
-        }
-        let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
-            return false;
-        };
-        if !self.layout.replace_pane(visible, pane_id) {
-            return false;
-        }
-        self.stacks[index].active = position;
-        true
+        reveal(&mut self.layout, &mut self.stacks, pane_id)
     }
 
     /// Reveal a pane (see `reveal_pane`) and focus it.
@@ -160,14 +263,7 @@ impl Tab {
     /// The next (or previous) member of `pane_id`'s stack after the visible
     /// one, wrapping.
     pub(crate) fn stack_neighbour(&self, pane_id: PaneId, forward: bool) -> Option<PaneId> {
-        let stack = self.stack_of(pane_id)?;
-        let len = stack.panes.len();
-        let next = if forward {
-            (stack.active + 1) % len
-        } else {
-            (stack.active + len - 1) % len
-        };
-        stack.panes.get(next).copied()
+        neighbour(&self.stacks, pane_id, forward)
     }
 
     /// Show the next (or previous) member and focus it. Returns it.
@@ -177,45 +273,10 @@ impl Tab {
         self.show_pane(target).then_some(target)
     }
 
-    /// Take a pane out of its stack, keeping the slot. A visible member hands
-    /// its leaf to its neighbour (the next member, else the previous one); a
-    /// stack left with one member becomes a plain pane. Returns false when the
+    /// Take a pane out of its stack, keeping the slot. Returns false when the
     /// pane is not stacked, so the caller removes it from the layout instead.
     pub(super) fn unstack_pane(&mut self, pane_id: PaneId) -> bool {
-        let Some(index) = self
-            .stacks
-            .iter()
-            .position(|stack| stack.panes.contains(&pane_id))
-        else {
-            return false;
-        };
-        let stack = &mut self.stacks[index];
-        let Some(position) = stack.panes.iter().position(|id| *id == pane_id) else {
-            return false;
-        };
-        if position == stack.active {
-            let heir = if position + 1 < stack.panes.len() {
-                position + 1
-            } else {
-                position - 1
-            };
-            let heir_id = stack.panes[heir];
-            self.layout.replace_pane(pane_id, heir_id);
-            let stack = &mut self.stacks[index];
-            stack.panes.remove(position);
-            // The next member slides into `position`; the previous one keeps
-            // its index.
-            stack.active = heir.min(position);
-        } else {
-            stack.panes.remove(position);
-            if position < stack.active {
-                stack.active -= 1;
-            }
-        }
-        if self.stacks[index].panes.len() < 2 {
-            self.stacks.remove(index);
-        }
-        true
+        unstack(&mut self.layout, &mut self.stacks, pane_id)
     }
 
     /// Test-only: the stack rules on top of the workspace invariants.

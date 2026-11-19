@@ -82,7 +82,7 @@ impl ClientShellState {
         }
     }
 
-    fn focused_dock_pane_id(&self) -> Option<String> {
+    pub(super) fn focused_dock_pane_id(&self) -> Option<String> {
         self.active_dock_surface()?
             .panes
             .iter()

@@ -17,7 +17,7 @@ use crate::terminal::{TerminalId, TerminalRuntime, TerminalRuntimeRegistry, Term
 
 mod aggregate;
 mod git;
-mod stack;
+pub(crate) mod stack;
 mod tab;
 
 use self::git::git_status_cache_key_for_space;

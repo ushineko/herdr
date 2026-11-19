@@ -371,6 +371,12 @@ impl HeadlessServer {
         has_app_target: bool,
         direct_terminal_targets: &HashSet<&str>,
     ) -> bool {
+        // Local patch (specs 001/002): dock panes are drawn by the dock's own
+        // stream, never by the tab surface, so their output alone does not
+        // need a pane-surface render.
+        if self.app.state.dock.contains(pane_id) {
+            return false;
+        }
         let terminal_id = self.terminal_id_for_pane(pane_id);
         (has_app_target && (terminal_id.is_none() || self.any_shell_surface_contains_pane(pane_id)))
             || terminal_id.is_none_or(|source| direct_terminal_targets.contains(source.as_str()))

@@ -48,7 +48,10 @@ impl HeadlessServer {
 
     /// Whether any of these dirty pty sources is a dock pane.
     pub(super) fn dock_sources_dirty(&self, sources: &HashSet<crate::layout::PaneId>) -> bool {
-        sources.iter().any(|id| self.app.state.dock.contains(*id))
+        // Spec 002: output from a hidden stack member draws nothing.
+        sources
+            .iter()
+            .any(|id| self.app.state.dock.contains(*id) && !self.app.state.dock.is_hidden(*id))
     }
 
     /// Send the current dock to every opted-in client whose last copy differs.
@@ -103,6 +106,7 @@ impl HeadlessServer {
                 panes: Vec::new(),
                 splits: Vec::new(),
                 zoomed: false,
+                stacks: Vec::new(),
             };
         };
         let area = dock.area();
@@ -111,6 +115,7 @@ impl HeadlessServer {
         let mut buffer = ratatui::buffer::Buffer::empty(area);
         let mut cursor = None;
         let mut panes = Vec::new();
+        let mut stacks = Vec::new();
         let now = Instant::now();
         for geometry in dock.geometry() {
             let Some(pane) = layout.panes.get(&geometry.id) else {
@@ -171,6 +176,9 @@ impl HeadlessServer {
                     Style::default().fg(palette.overlay0),
                 );
             }
+            if let Some(strip) = geometry.strip {
+                stacks.push(self.render_dock_strip(&mut buffer, layout, geometry.id, strip));
+            }
             panes.push(DockSurfacePane {
                 pane_id: crate::app::dock::dock_pane_public_id(geometry.id),
                 rect: rect.into(),
@@ -209,6 +217,62 @@ impl HeadlessServer {
             panes,
             splits,
             zoomed: layout.zoomed,
+            stacks,
+        }
+    }
+
+    /// Spec 002: draw a dock stack's strip and describe it for the client.
+    fn render_dock_strip(
+        &self,
+        buffer: &mut ratatui::buffer::Buffer,
+        layout: &crate::app::dock::DockLayout,
+        visible: crate::layout::PaneId,
+        strip: Rect,
+    ) -> crate::protocol::endpoint::PaneStackStrip {
+        let palette = &self.app.state.palette;
+        let base = Style::default().fg(palette.overlay0);
+        for x in strip.x..strip.right() {
+            buffer[(x, strip.y)].set_symbol(" ").set_style(base);
+        }
+        let mut members = Vec::new();
+        if let Some(stack) = crate::workspace::stack::stack_of(&layout.stacks, visible) {
+            let share = (strip.width / (stack.panes.len() as u16).max(1)).max(4);
+            let mut x = strip.x;
+            for pane_id in &stack.panes {
+                if x >= strip.right() {
+                    break;
+                }
+                let width = share.min(strip.right() - x);
+                let label = layout
+                    .panes
+                    .get(pane_id)
+                    .and_then(|pane| pane.label().map(str::to_owned))
+                    .unwrap_or_else(|| "shell".to_owned());
+                let text = format!(
+                    " {} ",
+                    crate::ui::truncate_end(&label, usize::from(width.saturating_sub(2)))
+                );
+                let style = if *pane_id == visible {
+                    Style::default().fg(palette.text).add_modifier(
+                        ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED,
+                    )
+                } else {
+                    base
+                };
+                buffer.set_stringn(x, strip.y, &text, usize::from(width), style);
+                members.push(crate::protocol::endpoint::PaneStackMember {
+                    pane_id: crate::app::dock::dock_pane_public_id(*pane_id),
+                    x,
+                    width,
+                    label,
+                });
+                x += width;
+            }
+        }
+        crate::protocol::endpoint::PaneStackStrip {
+            strip: strip.into(),
+            visible: crate::app::dock::dock_pane_public_id(visible),
+            members,
         }
     }
 }

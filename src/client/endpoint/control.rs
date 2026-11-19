@@ -101,6 +101,7 @@ mod tests {
             panes: Vec::new(),
             splits: Vec::new(),
             zoomed: false,
+            stacks: Vec::new(),
         };
         let data = serde_json::to_string(&surface).unwrap();
         assert!(matches!(

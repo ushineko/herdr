@@ -317,3 +317,59 @@ async fn full_renders_redraw_the_dock_only_after_it_changed() {
     assert!(surface.panes[0].restarting_in_ms.is_some());
     assert!(!server.app.state.dock.needs_redraw);
 }
+
+#[tokio::test]
+async fn dock_stacks_are_drawn_and_driven_by_dock_controls() {
+    let mut server = test_headless_server();
+    let (runtime, _input) = test_runtime(b"");
+    let ids = server.app.install_test_dock(vec![("usage", runtime)]);
+    let (control_rx, _render_rx) = connect_shell(&mut server, 7);
+    send(&mut server, 7, DockControl::Width { cols: 60 });
+    let seeded = crate::app::dock::dock_pane_public_id(ids[0]);
+
+    assert!(send(
+        &mut server,
+        7,
+        DockControl::StackNew {
+            pane_id: seeded.clone()
+        }
+    ));
+    let surface = dock_surfaces(&control_rx).pop().expect("a dock surface");
+    assert_eq!(surface.panes.len(), 1, "one slot");
+    assert_eq!(surface.stacks.len(), 1);
+    let members: Vec<_> = surface.stacks[0]
+        .members
+        .iter()
+        .map(|member| member.pane_id.clone())
+        .collect();
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0], seeded);
+    assert!(
+        frame_text(&surface)[0].contains("usage"),
+        "the strip is drawn"
+    );
+    assert!(server.app.state.dock.is_hidden(ids[0]));
+
+    assert!(
+        !server.dock_sources_dirty(&HashSet::from([ids[0]])),
+        "a hidden dock member's output draws nothing"
+    );
+    assert!(
+        !server.pty_sources_visible_to_any_render_target(&HashSet::from([ids[0]])),
+        "dock output never needs a pane-surface render"
+    );
+
+    let shown = surface.stacks[0].visible.clone();
+    assert!(send(
+        &mut server,
+        7,
+        DockControl::StackCycle {
+            pane_id: shown,
+            forward: true
+        }
+    ));
+    assert!(
+        !server.app.state.dock.is_hidden(ids[0]),
+        "cycled back to usage"
+    );
+}
