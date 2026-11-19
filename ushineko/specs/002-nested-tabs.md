@@ -2,7 +2,7 @@
 
 > Personal fork patch. Not part of herdr; not affiliated with the herdr project.
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -381,12 +381,12 @@ in the audit.
 ### Render hot path
 - [x] Output from a hidden pane takes the hidden-source early exit (test),
       for workspace stacks and dock stacks alike. (Part 3, workspace stacks: `hidden_member_output_takes_the_hidden_source_early_exit`. Dock stacks: part 5.)
-- [ ] `just bench-render-scale` with 1 and 15 populated panes, some of them
+- [x] `just bench-render-scale` with 1 and 15 populated panes, some of them
       hidden in stacks, compared with `ushineko/dock`; the delta is recorded
       here. Recorded under Part 5 below for
-      stack-free scenes. **Open:** upstream's benchmark has no stacked scenes,
-      so the "some hidden" half is covered only by the early-exit tests, not
-      measured.
+      stack-free scenes. Upstream's benchmark has no stacked scenes, so the
+      "some hidden" half is covered by the early-exit tests rather than
+      measured; accepted by the user as done on 2026-11-19.
 
 ### Dock
 - [x] Stacks work in dock slots: `stack_new_pane` with the dock focused adds a
@@ -420,6 +420,16 @@ in the audit.
       output and that `pane list` reports both with their `stack` objects. (`tests/pane_stacks.rs`: `stacked_panes_keep_their_own_output_and_are_listed_and_driven_while_hidden`.)
 - [x] An integration test restarts the server and asserts the stack is
       restored, with the same visible pane. (`a_stack_survives_a_server_restart_with_the_same_visible_pane`.)
+
+## Executive Summary
+
+Nested tabs: a layout slot can hold several panes behind a one-row strip, in
+workspace tabs and the dock. Hidden members stay ordinary panes (listed,
+readable, scriptable, agent-aware), the saved session stays loadable by stock
+herdr, and the protocol rides named endpoint controls without touching frozen
+messages. Reviewers should start with `src/workspace/stack.rs` (model and
+invariants), `src/persist/stack_restore.rs` (lenient restore),
+`src/ui/stack_strip.rs` (geometry and drawing) and the Phase 0 audit.
 
 ## Implementation notes
 
@@ -520,7 +530,8 @@ deliberate breakages, each caught once two test gaps were closed
 | 3 | **Not run live.** Covered by `a_hidden_agent_is_listed` and `a_blocked_agent_in_a_hidden_member_shows_its_glyph_in_the_strip`. |
 | 4 | **Pass.** `exit` in the visible pane: the neighbour shows, the strip goes away, `pane list` has no stack. |
 | 5 | **Pass.** After `server stop` and a restart the stack, its order and visible pane are back. A stock v0.9.5 client on the patched server renders the strip and types into the slot; a patched client on a stock server sends nothing for `prefix+t`. |
-| 6–7 | **Pending:** the herdr-resurrect port and the desk test. |
+| 6 | **Pass (2026-11-19, live).** njv-cachyos switched to the fork build: hayami in the dock, yazi and lazygit as nested tabs in 18 panel slots; herdr-resurrect needed no code change (it already used `--pane`), records all 18 yazi and relaunches lazygit by label. One snapshot prune after the deliberate mass close of the old usage panes (see the runbook). |
+| 7 | **Pass (2026-11-19).** Daily use by the user: "seems to work"; issues found and fixed on the way: strip styling (now the tab bar's), right-click on a strip entry (rename hidden tabs), `prefix+y` as a right-hand column. |
 
 ## Test strategy (for review before tests are written)
 
