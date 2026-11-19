@@ -249,6 +249,36 @@ local substitution or a small stack-aware helper (`is_visible`, `reveal`,
   which suppresses their notifications. Decisions are listed under Open
   decisions.
 
+**Independent review (2026-11-19)**, in
+[`002-phase0-review.md`](002-phase0-review.md): the audit's table is complete
+and themes A, D and E hold at the cited lines. It added:
+
+- **Notifications compute "active tab" inline** in
+  `src/server/headless/notifications.rs` (sound and toast paths), so fixing
+  only the shared helper would still suppress hidden panes there.
+  (Confirmed by hand.)
+- **`pane move` to a hidden target** takes the source pane, fails the insert,
+  and recovers it into a new tab; split and swap by a hidden id no-op or
+  error. Reveal-before-act belongs in the API layer, not only the layout.
+- **Dock hidden members:** `dock_sources_dirty` would redraw and re-encode
+  the dock on a hidden dock member's output.
+- **Client visibility:** once hidden panes are listed in the client snapshot,
+  client pane cycling and copy-mode cannot tell them apart. Decided
+  2026-11-19: patched clients derive the hidden set from the
+  `endpoint.pane-stack.v1` control; `ClientShellPane` and the frozen
+  `tests/fixtures/endpoint-snapshot-v1.json` stay unchanged.
+- **Smaller:** `replace_pane` must carry focus and previous focus; restore
+  re-roots a tab whose saved `root_pane` is hidden; public pane numbers for
+  hidden panes on restore are a prerequisite for the list fixes; a stack
+  switch must bump the client projection revision so the retained-surface
+  planner falls back.
+- **Pre-existing, from spec 001:** dock pane output always counts as visible
+  to `pty_source_visible_to_render_targets`, because `find_pane` knows only
+  workspace panes. This skews the hidden-source benchmark and is fixed with
+  the dock's hidden-member case.
+
+No finding needs a model redesign.
+
 Unverified: whether stock herdr keeps saved scrollback after a rollback (the
 history fingerprint may no longer match).
 
@@ -279,7 +309,9 @@ in the audit.
       stacks (implementation criterion below). Handoff *to stock* herdr fails
       safely while stacks exist; decided 2026-11-19: rollback to stock is a
       cold restart, documented.
-- [ ] The audit has an independent review before implementation starts.
+- [x] The audit has an independent review before implementation starts.
+      ([`002-phase0-review.md`](002-phase0-review.md); summary under Phase 0
+      findings.)
 
 ### Model and lifecycle
 - [ ] `stack_new_pane` adds a shell (default shell, cwd of the focused pane)
@@ -294,8 +326,16 @@ in the audit.
 - [ ] Focusing a hidden pane from Go To, an agent-list jump, a notification
       or `herdr pane focus` makes it visible first.
 - [ ] Hidden panes appear in agent lists, Go To and notifications, like any
-      pane, and their notifications fire even when their tab is active.
-- [ ] Geometry commands on a hidden pane reveal it, then act on its slot.
+      pane, and their notifications (sound and toast paths included) fire
+      even when their tab is active.
+- [ ] Patched clients learn hidden panes from the pane-stack control: pane
+      cycling and copy-mode never land on a hidden pane. `ClientShellPane`
+      and the endpoint fixtures are unchanged.
+- [ ] Geometry commands on a hidden pane reveal it, then act on its slot,
+      in the API layer too: `pane move` with a hidden target, and split and
+      swap by a hidden id (tests).
+- [ ] Switching the visible pane carries focus and previous focus, and bumps
+      the client projection revision.
 - [ ] Closing, moving or the exit of any member of a one-slot stack removes
       only that pane; the tab and workspace stay (audit theme A, tested for
       each close, move and death path).
@@ -326,7 +366,8 @@ in the audit.
       server (serde `Unknown` fallbacks, tested).
 
 ### Render hot path
-- [ ] Output from a hidden pane takes the hidden-source early exit (test).
+- [ ] Output from a hidden pane takes the hidden-source early exit (test),
+      for workspace stacks and dock stacks alike.
 - [ ] `just bench-render-scale` with 1 and 15 populated panes, some of them
       hidden in stacks, compared with `ushineko/dock`; the delta is recorded
       here.
@@ -341,7 +382,9 @@ in the audit.
       visible pane and pane cwds. Agents in hidden panes resume through the
       existing agent-resume path.
 - [ ] A saved stack with unknown members or an out-of-range index restores
-      repaired, without error (test).
+      repaired, without error (test). A tab whose saved `root_pane` is a
+      hidden member keeps its identity; hidden panes keep their public pane
+      numbers.
 
 ### Docs
 - [ ] `configuration.mdx` documents the keys and behaviour (English, with the
