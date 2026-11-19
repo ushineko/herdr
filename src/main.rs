@@ -196,6 +196,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # focus_dock = "prefix+u"                        # move the keyboard into the dock and back
 # toggle_dock = "prefix+shift+u"                 # show or hide the dock on this client
 # reset_dock = ""                                # rebuild the dock from [ui.dock]
+# stack_new_pane = "prefix+t"                    # new shell as a nested tab in the focused pane's slot
+# stack_next = "prefix+period"                   # next nested tab in the focused slot
+# stack_previous = "prefix+comma"                # previous nested tab in the focused slot
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.

@@ -328,9 +328,9 @@ in the audit.
 - [x] Hidden panes appear in agent lists, Go To and notifications, like any
       pane, and their notifications (sound and toast paths included) fire
       even when their tab is active. (Part 3: lists use `Tab::all_pane_ids`; `pane_is_in_active_tab` and both inline checks in `notifications.rs` treat hidden members as off screen; `a_hidden_agent_is_listed`, `hidden_members_count_as_off_screen_for_notifications_and_seen`.)
-- [ ] Patched clients learn hidden panes from the pane-stack control: pane
+- [x] Patched clients learn hidden panes from the pane-stack control: pane
       cycling and copy-mode never land on a hidden pane. `ClientShellPane`
-      and the endpoint fixtures are unchanged.
+      and the endpoint fixtures are unchanged. (Part 4: `hidden_pane_ids`; `pane_cycling_skips_hidden_members`. Copy mode works from surface panes, which exclude hidden members; word selection treats a hidden pane as gone.)
 - [x] Geometry commands on a hidden pane reveal it, then act on its slot,
       in the API layer too: `pane move` with a hidden target, and split and
       swap by a hidden id (tests). (Part 3: `App::reveal_geometry_targets` before dispatch; `geometry_requests_on_a_hidden_member_reveal_it_then_act`.)
@@ -359,10 +359,10 @@ in the audit.
       (pane label, else agent, else process), the visible pane highlighted, a
       blocked or done hidden agent shown by its glyph. A single pane is drawn
       exactly as before.
-- [ ] Clicking a strip entry, `stack_next` / `stack_previous`, and the wheel
-      over the strip switch panes in that slot and focus the new one.
-- [ ] `keys.stack_new_pane`, `keys.stack_next` and `keys.stack_previous`
-      exist, and the shipped defaults produce no keymap diagnostics.
+- [x] Clicking a strip entry, `stack_next` / `stack_previous`, and the wheel
+      over the strip switch panes in that slot and focus the new one. (Part 4: `clicks_and_the_wheel_over_a_strip_switch_the_stack`, `stack_keys_send_new_and_cycle_for_the_focused_pane`; the server side in part 3.)
+- [x] `keys.stack_new_pane`, `keys.stack_next` and `keys.stack_previous`
+      exist, and the shipped defaults produce no keymap diagnostics. (Part 4: `pane_stack_keys_have_conflict_free_defaults`.)
 - [ ] A stock client connected to a patched server renders the strip and
       works; a patched client against a stock server shows no pane-stack
       controls.
@@ -461,6 +461,16 @@ Verification: lint clean, nextest 4156 passed; 15 deliberate breakages, all
 caught once two test gaps were closed (active-tab resize, workspace-filtered
 `pane list`). Known gap: a hidden pane's respawn size goes through its slot
 (`new_pane_terminal_size`), untested.
+
+**Part 4 (client), 2026-11-19.** `keys.stack_new_pane` (`prefix+t`),
+`keys.stack_next` (`prefix+period`) and `keys.stack_previous`
+(`prefix+comma`) send `PaneStackControl`s for the focused pane, only to an
+endpoint that advertised `pane_stacks`. `src/client/shell/stacks.rs` keeps
+the endpoint's `PaneStackSurface` (dropped across server boots), places strip
+hit areas at the pane surface's origin, turns a strip click into `show` and
+the wheel into `cycle`, and derives the hidden set, which pane cycling and
+word selection respect. Verification: lint clean, nextest 4162 passed; six
+deliberate breakages, each caught.
 
 ## Test strategy (for review before tests are written)
 

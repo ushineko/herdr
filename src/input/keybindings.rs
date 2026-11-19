@@ -65,6 +65,9 @@ pub(crate) enum KeybindAction {
     FocusDock,
     ToggleDock,
     ResetDock,
+    StackNewPane,
+    StackNext,
+    StackPrevious,
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
@@ -158,6 +161,9 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.focus_dock, KeybindAction::FocusDock),
         (&keybinds.toggle_dock, KeybindAction::ToggleDock),
         (&keybinds.reset_dock, KeybindAction::ResetDock),
+        (&keybinds.stack_new_pane, KeybindAction::StackNewPane),
+        (&keybinds.stack_next, KeybindAction::StackNext),
+        (&keybinds.stack_previous, KeybindAction::StackPrevious),
         (&keybinds.reload_config, KeybindAction::ReloadConfig),
         (
             &keybinds.open_notification_target,
@@ -309,6 +315,29 @@ mod tests {
             ),
             Some(KeybindMatch::Action(KeybindAction::ResetDock))
         ));
+    }
+
+    /// Local patch (spec 002): the pane-stack keys are bound by default, and
+    /// the default keymap stays free of diagnostics.
+    #[test]
+    fn pane_stack_keys_have_conflict_free_defaults() {
+        let config = crate::config::Config::default();
+        assert!(config.collect_diagnostics().is_empty());
+        let keybinds = config.keybinds();
+        for (key, action) in [
+            ('t', KeybindAction::StackNewPane),
+            ('.', KeybindAction::StackNext),
+            (',', KeybindAction::StackPrevious),
+        ] {
+            let resolved = resolve_prefix_binding(
+                &keybinds,
+                &TerminalKey::new(KeyCode::Char(key), KeyModifiers::empty()),
+            );
+            assert!(
+                matches!(resolved, Some(KeybindMatch::Action(found)) if found == action),
+                "prefix+{key}"
+            );
+        }
     }
 
     #[test]

@@ -152,6 +152,8 @@ pub(super) struct ShellHitMap {
     pub(super) dock_rule: Rect,
     pub(super) dock_panes: Vec<super::dock::DockPaneHit>,
     pub(super) dock_splits: Vec<super::dock::DockSplitHit>,
+    /// Local patch (spec 002): pane-stack strip entries.
+    pub(super) stack_strips: Vec<super::stacks::StackStripHit>,
 }
 
 #[derive(Clone)]

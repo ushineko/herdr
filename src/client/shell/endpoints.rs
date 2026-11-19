@@ -26,6 +26,10 @@ pub(crate) struct ClientShellEndpoint {
     pub(crate) dock_supported: bool,
     /// Local patch: the endpoint's dock as last drawn by its server.
     pub(crate) dock_surface: Option<Box<crate::protocol::endpoint::DockSurface>>,
+    /// Local patch (spec 002): the endpoint advertised pane stacks.
+    pub(crate) pane_stacks_supported: bool,
+    /// Local patch (spec 002): the stacks in this client's view.
+    pub(crate) pane_stacks: Option<Box<crate::protocol::endpoint::PaneStackSurface>>,
 }
 
 pub(super) struct MachineHit {
@@ -94,6 +98,9 @@ impl ClientShellState {
                 methods: previous.and_then(|endpoint| endpoint.methods.clone()),
                 dock_supported: previous.is_some_and(|endpoint| endpoint.dock_supported),
                 dock_surface: previous.and_then(|endpoint| endpoint.dock_surface.clone()),
+                pane_stacks_supported: previous
+                    .is_some_and(|endpoint| endpoint.pane_stacks_supported),
+                pane_stacks: previous.and_then(|endpoint| endpoint.pane_stacks.clone()),
             });
         }
 
@@ -142,6 +149,8 @@ impl ClientShellState {
             endpoint.agent_view_projection_supported = false;
             endpoint.dock_supported = false;
             endpoint.dock_surface = None;
+            endpoint.pane_stacks_supported = false;
+            endpoint.pane_stacks = None;
         }
     }
 
@@ -224,6 +233,49 @@ impl ClientShellState {
         }
         endpoint.dock_surface = Some(Box::new(surface));
         self.release_dock_focus_if_gone();
+        true
+    }
+
+    /// Local patch (spec 002): whether an endpoint offers pane stacks.
+    pub(crate) fn set_endpoint_pane_stacks_supported(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        supported: bool,
+    ) {
+        if let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        {
+            endpoint.pane_stacks_supported = supported;
+            if !supported {
+                endpoint.pane_stacks = None;
+            }
+        }
+    }
+
+    /// Local patch (spec 002): store an endpoint's pane stacks. Stacks from a
+    /// previous server boot are dropped. Returns whether they were kept.
+    pub(crate) fn set_endpoint_pane_stacks(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        surface: crate::protocol::endpoint::PaneStackSurface,
+    ) -> bool {
+        let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        else {
+            return false;
+        };
+        let stale = endpoint
+            .snapshot
+            .as_deref()
+            .is_some_and(|snapshot| snapshot.boot_id != surface.boot_id);
+        if !endpoint.pane_stacks_supported || stale {
+            return false;
+        }
+        endpoint.pane_stacks = Some(Box::new(surface));
         true
     }
 
@@ -811,5 +863,7 @@ pub(super) fn local_endpoint() -> ClientShellEndpoint {
         methods: None,
         dock_supported: false,
         dock_surface: None,
+        pane_stacks_supported: false,
+        pane_stacks: None,
     }
 }

@@ -13,6 +13,8 @@ pub(crate) enum EndpointControlMessage {
     Snapshot(Box<crate::protocol::ClientShellSnapshot>),
     /// Local patch: the endpoint's dock as drawn by its server.
     Dock(Box<crate::protocol::endpoint::DockSurface>),
+    /// Local patch (spec 002): the pane stacks in this client's view.
+    PaneStacks(Box<crate::protocol::endpoint::PaneStackSurface>),
     Ignored,
 }
 
@@ -59,6 +61,12 @@ pub(crate) fn decode_endpoint_control(
         // Optional control: a dock this client cannot read is dropped, not fatal.
         return Ok(serde_json::from_str(data)
             .map(|surface| EndpointControlMessage::Dock(Box::new(surface)))
+            .unwrap_or(EndpointControlMessage::Ignored));
+    }
+    if kind == crate::protocol::endpoint::PANE_STACK_SURFACE_KIND {
+        // Optional control: unreadable stacks are dropped, not fatal.
+        return Ok(serde_json::from_str(data)
+            .map(|surface| EndpointControlMessage::PaneStacks(Box::new(surface)))
             .unwrap_or(EndpointControlMessage::Ignored));
     }
     if kind == crate::protocol::endpoint::ENDPOINT_SNAPSHOT_KIND {

@@ -1783,6 +1783,9 @@ impl ClientShellState {
         if self.handle_dock_mouse(mouse, outcome) {
             return;
         }
+        if self.handle_stack_mouse(mouse, outcome) {
+            return;
+        }
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Right) => {

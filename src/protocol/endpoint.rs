@@ -206,8 +206,6 @@ pub enum PaneStackControl {
     Unknown,
 }
 
-// Sent by the client shell, wired in part 4 of spec 002.
-#[allow(dead_code)]
 pub fn pane_stack_control_message(
     control: &PaneStackControl,
 ) -> serde_json::Result<super::ClientMessage> {

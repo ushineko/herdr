@@ -177,6 +177,8 @@ impl ClientShellState {
             .snapshot
             .as_deref()
             .is_none_or(|snapshot| !snapshot.panes.iter().any(|pane| pane.pane_id == pane_id))
+            // Local patch (spec 002): a pane hidden in a stack is off screen.
+            || self.hidden_pane_ids().contains(&pane_id)
         {
             self.cancel_word_selection();
             return (true, Vec::new());
