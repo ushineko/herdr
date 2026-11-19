@@ -8,6 +8,7 @@ mod io;
 pub mod plugin_registry;
 mod restore;
 mod snapshot;
+mod stack_restore;
 mod writer;
 
 pub use self::io::{clear_history, load, load_history};

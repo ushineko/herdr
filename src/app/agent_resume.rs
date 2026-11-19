@@ -105,9 +105,14 @@ impl App {
         let mut pending = Vec::new();
         for (ws_idx, ws) in self.state.workspaces.iter().enumerate() {
             for (tab_idx, tab) in ws.tabs.iter().enumerate() {
-                for info in
-                    self.pending_agent_resume_pane_infos(ws_idx, tab_idx, tab, terminal_area)
-                {
+                // Local patch (spec 002): hidden stack members resume too, at
+                // their visible member's size.
+                for info in tab.with_hidden_members(self.pending_agent_resume_pane_infos(
+                    ws_idx,
+                    tab_idx,
+                    tab,
+                    terminal_area,
+                )) {
                     let Some(pane) = tab.panes.get(&info.id) else {
                         continue;
                     };
@@ -710,6 +715,52 @@ mod tests {
         for (_, runtime) in app.terminal_runtimes.drain() {
             runtime.shutdown();
         }
+    }
+
+    /// Local patch (spec 002): a hidden stack member's deferred agent resume
+    /// is a launch candidate, at its visible member's size.
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn hidden_stack_members_are_resume_candidates_at_the_visible_size() {
+        let mut app = test_app();
+        let mut workspace = crate::workspace::Workspace::test_new("stacked");
+        let root = workspace.tabs[0].root_pane;
+        let visible = workspace.test_stack(root);
+        let hidden_terminal = workspace.terminal_id(root).cloned().unwrap();
+        assert!(workspace.tabs[0].is_hidden_pane(root));
+        let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+        app.state.view.pane_infos = workspace.tabs[0].layout.panes(area);
+        app.state.view.terminal_area = area;
+        app.state.workspaces = vec![workspace];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        app.state
+            .terminals
+            .get_mut(&hidden_terminal)
+            .expect("test terminal should exist")
+            .pending_agent_resume_plan = Some(crate::agent_resume::AgentResumePlan {
+            agent: "codex".into(),
+            argv: long_running_test_argv(),
+            dedupe_key: format!("herdr:codex\0codex\0Id\0{hidden_terminal}"),
+        });
+        let candidates = app.pending_agent_resume_candidates();
+        let candidate = candidates
+            .iter()
+            .find(|candidate| candidate.pane_id == root)
+            .expect("the hidden member is a resume candidate");
+        let visible_info = app
+            .pending_agent_resume_pane_infos(0, 0, &app.state.workspaces[0].tabs[0], area)
+            .into_iter()
+            .find(|info| info.id == visible)
+            .unwrap();
+        assert_eq!(
+            (candidate.rows, candidate.cols),
+            (
+                visible_info.inner_rect.height,
+                visible_info.inner_rect.width
+            ),
+            "sized like the visible member"
+        );
     }
 
     #[cfg(not(windows))]

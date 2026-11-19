@@ -48,6 +48,31 @@ impl Tab {
         ids
     }
 
+    /// Pane geometry for every pane: `infos` (the layout leaves) plus, for each
+    /// hidden member, a copy of its visible member's entry. Hidden panes are
+    /// sized like the visible one, so switching never reflows.
+    pub(crate) fn with_hidden_members(
+        &self,
+        mut infos: Vec<crate::layout::PaneInfo>,
+    ) -> Vec<crate::layout::PaneInfo> {
+        for stack in &self.stacks {
+            let Some(visible) = stack.visible() else {
+                continue;
+            };
+            let Some(info) = infos.iter().find(|info| info.id == visible).cloned() else {
+                continue;
+            };
+            for (index, pane_id) in stack.panes.iter().enumerate() {
+                if index != stack.active {
+                    let mut hidden = info.clone();
+                    hidden.id = *pane_id;
+                    infos.push(hidden);
+                }
+            }
+        }
+        infos
+    }
+
     /// Whether the pane is a hidden member of a stack in this tab.
     pub(crate) fn is_hidden_pane(&self, pane_id: PaneId) -> bool {
         self.stack_of(pane_id)

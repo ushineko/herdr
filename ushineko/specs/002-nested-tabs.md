@@ -382,13 +382,18 @@ in the audit.
       them.
 
 ### Persistence
-- [ ] A session with stacks saves and restores with the same members, order,
+- [x] A session with stacks saves and restores with the same members, order,
       visible pane and pane cwds. Agents in hidden panes resume through the
-      existing agent-resume path.
-- [ ] A saved stack with unknown members or an out-of-range index restores
+      existing agent-resume path. (Part 2:
+      `a_saved_stack_restores_with_members_order_visible_pane_and_numbers`,
+      `capture_saves_stacks_and_hidden_panes_and_omits_an_empty_field`,
+      `hidden_stack_members_are_resume_candidates_at_the_visible_size`.)
+- [x] A saved stack with unknown members or an out-of-range index restores
       repaired, without error (test). A tab whose saved `root_pane` is a
       hidden member keeps its identity; hidden panes keep their public pane
-      numbers.
+      numbers. (Part 2: `damaged_saved_stacks_restore_repaired_without_error`,
+      `a_hidden_root_keeps_the_tab_identity_and_a_hidden_focus_falls_back_to_a_leaf`,
+      `a_stack_whose_visible_member_failed_hands_its_leaf_to_a_survivor`.)
 
 ### Docs
 - [ ] `configuration.mdx` documents the keys and behaviour (English, with the
@@ -422,6 +427,22 @@ that pane only, its slot passing to the next member; moving a whole slot is
 built on this in part 3. Stacks are not yet saved or restored (part 2), and
 nothing outside tests creates one (part 3). Verification: lint clean, nextest
 4134 passed, 16 stack tests; six deliberate breakages, each caught.
+
+**Part 2 (persistence and handoff), 2026-11-19.** `TabSnapshot.stacks`
+(`StackSnapshot { panes, active }`) is omitted when empty, so stack-free
+sessions serialize, and fingerprint their saved scrollback, exactly as stock
+herdr does. `src/persist/stack_restore.rs` validates saved stacks before
+restore (exactly one member must be a tree leaf; hidden members need a saved
+pane entry; a pane belongs to one stack), gives hidden members fresh ids, and
+`restore_tab` restores them through the same per-pane path as tree panes, so a
+handoff import consumes their runtimes. If a visible member does not come
+back, a surviving member takes its leaf before pruning. Focus resolves among
+leaves only; a hidden root pane is kept. Public pane numbers and handoff
+aliases cover hidden members, and deferred agent resumes include them at the
+visible member's size (`Tab::with_hidden_members`). Verification: lint clean,
+nextest 4141 passed; eight deliberate breakages, each caught. The live
+handoff integration test comes with part 5, once stacks can be built from
+outside.
 
 ## Test strategy (for review before tests are written)
 
