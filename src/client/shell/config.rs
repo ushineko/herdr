@@ -60,6 +60,7 @@ impl ClientShellState {
             agent_panel_sort: self
                 .agent_panel_sort_manual
                 .then_some(self.config.agent_panel_sort),
+            dock_hidden: self.dock_hidden_manual.then_some(self.dock_hidden),
             collapsed_groups,
             remote_collapsed_groups,
         };
@@ -433,10 +434,58 @@ impl ClientShellConfig {
             tab_bar,
             mobile_header: Rect::default(),
             pane_surface,
+            dock: Rect::default(),
         }
     }
 
+    /// Lay out the shell, with the dock (local patch) along the bottom when it
+    /// has rows to show. `dock_rows` is the dock's content height, 0 for none.
+    // Layout inputs are independent sizes and modes; grouping them would only rename them.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout(
+        &self,
+        cols: u16,
+        rows: u16,
+        sidebar_collapsed: bool,
+        tab_count: usize,
+        sidebar_width: u16,
+        sidebar_layout: crate::config::SidebarLayoutConfig,
+        dock_rows: u16,
+    ) -> ClientShellLayout {
+        let dock_height = self.dock_height(cols, rows, dock_rows);
+        let above = rows - dock_height;
+        let mut layout = self.layout_above_dock(
+            cols,
+            above,
+            sidebar_collapsed,
+            tab_count,
+            sidebar_width,
+            sidebar_layout,
+        );
+        if dock_height > 0 {
+            layout.dock = Rect::new(0, above, cols, dock_height);
+        }
+        layout
+    }
+
+    /// Lines the dock takes: its content rows plus the rule above them. None on
+    /// mobile, and never so many that the workspace keeps fewer than
+    /// `MIN_WORKSPACE_ROWS`; a dock that cannot show a content row is dropped.
+    pub(super) fn dock_height(&self, cols: u16, rows: u16, dock_rows: u16) -> u16 {
+        if dock_rows == 0 || cols <= self.mobile_width_threshold {
+            return 0;
+        }
+        let height = dock_rows
+            .saturating_add(1)
+            .min(rows.saturating_sub(MIN_WORKSPACE_ROWS));
+        if height < 2 {
+            0
+        } else {
+            height
+        }
+    }
+
+    fn layout_above_dock(
         &self,
         cols: u16,
         rows: u16,
@@ -453,6 +502,7 @@ impl ClientShellConfig {
                 tab_bar: Rect::default(),
                 mobile_header: Rect::new(0, 0, cols, header_height),
                 pane_surface: Rect::new(0, header_height, cols, rows.saturating_sub(header_height)),
+                dock: Rect::default(),
             };
         }
 
@@ -507,6 +557,7 @@ impl ClientShellConfig {
             tab_bar,
             mobile_header: Rect::default(),
             pane_surface,
+            dock: Rect::default(),
         }
     }
 
@@ -535,6 +586,7 @@ impl ClientShellConfig {
                 0,
                 sidebar_width,
                 sidebar_layout,
+                0,
             )
             .pane_surface;
         ClientSurfaceSize {

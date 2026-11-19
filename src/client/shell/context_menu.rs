@@ -55,6 +55,12 @@ impl ClientContextMenuOverlay {
                     Action::ToggleGroup,
                 ),
             ],
+            ClientContextMenuTarget::DockPane { .. } => vec![
+                item("Split right", Action::SplitRight),
+                item("Split down", Action::SplitDown),
+                item("Close pane", Action::ClosePane),
+                item("Reset dock to config", Action::ResetDock),
+            ],
             ClientContextMenuTarget::Tab { .. } => vec![
                 item("New tab", Action::NewTab),
                 item("Rename", Action::Rename),
@@ -256,6 +262,9 @@ impl ClientShellState {
                         outcome,
                     );
                 }
+            }
+            ClientContextMenuTarget::DockPane { pane_id } => {
+                self.activate_dock_context_action(pane_id, action, outcome)
             }
             ClientContextMenuTarget::Pane {
                 pane_id,

@@ -62,7 +62,13 @@ pub(super) struct ClientShellLayout {
     pub tab_bar: Rect,
     pub mobile_header: Rect,
     pub pane_surface: Rect,
+    /// Local patch: the dock along the bottom, rule row included. Empty when
+    /// there is no dock, it is hidden here, or the terminal is mobile-width.
+    pub dock: Rect,
 }
+
+/// The workspace keeps at least this many rows however tall the dock is.
+pub(super) const MIN_WORKSPACE_ROWS: u16 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ClientMobileTarget {
@@ -142,6 +148,10 @@ pub(super) struct ShellHitMap {
     pub(super) release_notes_scrollbar: Rect,
     pub(super) release_notes_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) release_notes_max_scroll: usize,
+    /// Local patch: the rule above the dock, its panes and its dividers.
+    pub(super) dock_rule: Rect,
+    pub(super) dock_panes: Vec<super::dock::DockPaneHit>,
+    pub(super) dock_splits: Vec<super::dock::DockSplitHit>,
 }
 
 #[derive(Clone)]
@@ -529,6 +539,8 @@ pub(super) enum ClientContextMenuAction {
     Zoom,
     ToggleRightClickPassthrough,
     ClosePane,
+    /// Local patch: rebuild the dock from config.
+    ResetDock,
     /// Focus the agent on the picker row that was chosen.
     FocusAgent,
 }
@@ -554,6 +566,8 @@ pub(super) enum ClientContextMenuTarget {
         has_manual_label: bool,
         right_click_passthrough: bool,
     },
+    /// Local patch: a dock pane's right-click menu.
+    DockPane { pane_id: String },
     /// Agents folded into one space chip on the horizontal bar. Carries its own
     /// rows because, unlike every other kind, its items are computed per open.
     SpaceAgents {
@@ -764,6 +778,8 @@ pub(super) struct ClientVisibleNotification {
 pub(super) enum ClientInputTarget {
     Pane(String),
     Popup(String),
+    /// Local patch: a dock pane, by its `dock_N` id.
+    Dock(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -889,6 +905,14 @@ pub(crate) struct ClientShellState {
     pub(super) sidebar_section_split: f32,
     pub(super) sidebar_section_split_manual: bool,
     pub(super) agent_panel_sort_manual: bool,
+    /// Local patch: the keyboard is in the dock.
+    pub(super) dock_focused: bool,
+    /// Local patch: the dock is hidden on this client.
+    pub(super) dock_hidden: bool,
+    /// The hidden state was toggled here and is saved in chrome preferences.
+    pub(super) dock_hidden_manual: bool,
+    pub(super) last_dock_rule_click: Option<std::time::Instant>,
+    pub(super) dock_drag: Option<super::dock::DockDrag>,
     pub(super) last_sidebar_divider_click: Option<std::time::Instant>,
     pub(super) chrome_drag: Option<ClientChromeDrag>,
     pub(super) workspace_press: Option<ClientWorkspacePress>,
@@ -1067,6 +1091,11 @@ impl ClientShellState {
             sidebar_section_split,
             sidebar_section_split_manual: preferences.sidebar_section_split.is_some(),
             agent_panel_sort_manual: preferences.agent_panel_sort.is_some(),
+            dock_focused: false,
+            dock_hidden: preferences.dock_hidden.unwrap_or(false),
+            dock_hidden_manual: preferences.dock_hidden.is_some(),
+            last_dock_rule_click: None,
+            dock_drag: None,
             last_sidebar_divider_click: None,
             chrome_drag: None,
             workspace_press: None,
@@ -1254,6 +1283,7 @@ impl ClientShellState {
             self.focused_tab_count(),
             self.sidebar_width,
             self.effective_sidebar_layout(),
+            self.dock_layout_rows(),
         )
     }
 

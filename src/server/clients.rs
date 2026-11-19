@@ -192,6 +192,10 @@ pub(crate) struct ClientConnection {
     pub(crate) shell_deferred_navigation_response: Option<Vec<u8>>,
     /// Whether this shell uses the endpoint-owned keymap rather than a client-owned keymap.
     pub(crate) shell_uses_endpoint_keybindings: bool,
+    /// Local patch: this client sent a dock control, so it understands dock surfaces.
+    pub(crate) dock_opt_in: bool,
+    /// Last dock surface sent, to skip identical resends.
+    pub(crate) last_dock_message: Option<String>,
     /// Channels for sending framed ServerMessage data to the client writer thread.
     pub(crate) writer: Option<ClientWriter>,
 }
@@ -255,6 +259,8 @@ impl ClientConnection {
             shell_deferred_navigation_request_id: None,
             shell_deferred_navigation_response: None,
             shell_uses_endpoint_keybindings: false,
+            dock_opt_in: false,
+            last_dock_message: None,
             writer,
         }
     }

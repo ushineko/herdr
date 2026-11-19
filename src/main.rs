@@ -193,6 +193,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resize_pane_right = ""  # optional, e.g. "ctrl+shift+alt+right"
 # toggle_sidebar = "prefix+b"                    # inert while the horizontal bar is shown
 # toggle_sidebar_layout = "prefix+shift+b"       # experimental; switches vertical <-> horizontal
+# focus_dock = "prefix+u"                        # move the keyboard into the dock and back
+# toggle_dock = "prefix+shift+u"                 # show or hide the dock on this client
+# reset_dock = ""                                # rebuild the dock from [ui.dock]
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
@@ -254,6 +257,16 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Experimental. Sidebar placement: "vertical" is the left rail, "horizontal" moves spaces to a
 # bar across the top of the screen with agent status folded into each space.
 # sidebar_layout = "vertical"
+
+# Dock: a pane area along the bottom that belongs to no workspace and shows in every one.
+# This seeds it when no saved dock exists; splits and sizes made at runtime are saved and win.
+# [ui.dock]
+# rows = 3
+# [[ui.dock.panes]]
+# label = "usage"
+# command = "hayami-tui --sections usage --arrangement row"
+# cwd = "~"     # optional
+# width = 1     # optional relative share of the dock width
 
 # Terminal width at or below which Herdr uses the mobile single-column layout.
 # Increase this for foldables, tablets, or wide phone terminals.

@@ -6,6 +6,11 @@ impl ClientShellState {
         binding: crate::input::KeybindMatch,
         outcome: &mut ClientShellInput,
     ) {
+        if let crate::input::KeybindMatch::Action(action) = &binding {
+            if self.dock_binding(*action, outcome) {
+                return;
+            }
+        }
         match binding {
             crate::input::KeybindMatch::Action(crate::input::KeybindAction::Detach) => {
                 outcome.detach = true;

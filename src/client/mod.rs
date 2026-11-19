@@ -515,6 +515,17 @@ async fn run_client_loop(
                     })
                 }),
         );
+        shell.set_endpoint_dock_supported(
+            &endpoint::ClientEndpointId::Local,
+            initial
+                .as_ref()
+                .and_then(|(_, handshake)| handshake.endpoint_capabilities.as_ref())
+                .is_some_and(|capabilities| {
+                    capabilities
+                        .iter()
+                        .any(|capability| capability == crate::protocol::endpoint::DOCK_CAPABILITY)
+                }),
+        );
         if local_unavailable {
             shell.set_endpoint_status(
                 &endpoint::ClientEndpointId::Local,
@@ -631,9 +642,17 @@ async fn run_client_loop(
             max_frame_size,
             surface_decoder,
         )?;
+        let dock = negotiation.supports_capability(crate::protocol::endpoint::DOCK_CAPABILITY);
         let mut registry = endpoint::EndpointRegistry::new(transport, 1, negotiation);
         if state.shell.is_some() {
             registry.send(&ClientMessage::ClientShellFocus { focused: true });
+            if dock {
+                send_dock_opt_in(
+                    &mut registry,
+                    &endpoint::ClientEndpointId::Local,
+                    state.reported_size.0,
+                );
+            }
         }
         registry
     } else {
@@ -1317,6 +1336,16 @@ async fn run_client_loop(
                 } else if let Err(e) = write_to_server(&mut write_stream, &msg) {
                     return Err(ClientError::ConnectionLost(e));
                 }
+                // Local patch: the dock takes this client's new width.
+                if pending_activation.is_none() {
+                    if let Some(width) = state
+                        .shell
+                        .as_ref()
+                        .and_then(|shell| shell.dock_width_message(new_cols))
+                    {
+                        let _ = write_to_server(&mut write_stream, &width);
+                    }
+                }
             }
             ClientLoopEvent::EndpointSupervisor(event) => match event {
                 endpoint::EndpointSupervisorEvent::Status {
@@ -1365,12 +1394,15 @@ async fn run_client_loop(
                     let agent_view_projection_supported = negotiation.supports_capability(
                         crate::protocol::endpoint::AGENT_VIEW_PROJECTION_CAPABILITY,
                     );
+                    let dock_supported =
+                        negotiation.supports_capability(crate::protocol::endpoint::DOCK_CAPABILITY);
                     let frame = state.shell.as_mut().and_then(|shell| {
                         shell.set_endpoint_methods_for(&endpoint_id, Some(negotiation.methods()));
                         shell.set_endpoint_agent_view_projection_supported(
                             &endpoint_id,
                             agent_view_projection_supported,
                         );
+                        shell.set_endpoint_dock_supported(&endpoint_id, dock_supported);
                         shell.compose(state.reported_size.0, state.reported_size.1)
                     });
                     let reader_quit = writer.stop_handle();
@@ -1383,6 +1415,9 @@ async fn run_client_loop(
                         negotiation,
                         false,
                     );
+                    if dock_supported && state.shell.is_some() {
+                        send_dock_opt_in(&mut write_stream, &endpoint_id, state.reported_size.0);
+                    }
                     if let Some(frame) = frame {
                         state.present_frame(frame);
                     }
@@ -2091,6 +2126,41 @@ async fn run_client_loop(
                         }
                         let snapshot = match endpoint::decode_endpoint_control(&kind, &data) {
                             Ok(endpoint::EndpointControlMessage::HealthPong) => continue,
+                            Ok(endpoint::EndpointControlMessage::Dock(surface)) => {
+                                let (cols, rows) = state.reported_size;
+                                let (cell_width_px, cell_height_px) = state.reported_cell_size;
+                                let pixel_mouse = state.pixel_mouse_available();
+                                let mut resize = None;
+                                let frame = state.shell.as_mut().and_then(|shell| {
+                                    let previous = shell.surface_size(cols, rows);
+                                    if !shell.set_endpoint_dock_surface(&endpoint_id, *surface) {
+                                        return None;
+                                    }
+                                    // A dock height change moves the pane area; the
+                                    // server must resize the panes to match.
+                                    if shell.surface_size(cols, rows) != previous {
+                                        shell.invalidate_pane_surface();
+                                        resize = Some(client_shell_resize_message(
+                                            shell,
+                                            cols,
+                                            rows,
+                                            cell_width_px,
+                                            cell_height_px,
+                                            pixel_mouse,
+                                        ));
+                                    }
+                                    shell.compose(cols, rows)
+                                });
+                                if let Some(resize) = resize {
+                                    if pending_activation.is_none() {
+                                        let _ = write_to_server(&mut write_stream, &resize);
+                                    }
+                                }
+                                if let Some(frame) = frame {
+                                    state.present_frame(frame);
+                                }
+                                continue;
+                            }
                             Ok(endpoint::EndpointControlMessage::AgentViewProjection(
                                 projection,
                             )) => {
@@ -2365,3 +2435,21 @@ async fn run_client_loop(
 
 #[cfg(test)]
 mod tests;
+
+/// Local patch: opt in to an endpoint's dock by reporting this client's width.
+/// Only called once the endpoint advertised the dock capability, so stock
+/// servers never receive it.
+fn send_dock_opt_in(
+    registry: &mut endpoint::EndpointRegistry,
+    endpoint_id: &endpoint::ClientEndpointId,
+    cols: u16,
+) {
+    match crate::protocol::endpoint::dock_control_message(
+        &crate::protocol::endpoint::DockControl::Width { cols },
+    ) {
+        Ok(message) => {
+            registry.send_to(endpoint_id, &message);
+        }
+        Err(err) => debug!(%err, "failed to encode dock opt-in"),
+    }
+}

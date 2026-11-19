@@ -31,6 +31,124 @@ pub const AGENT_VIEW_PROJECTION_CAPABILITY: &str = "agent_view_projection";
 pub const AGENT_VIEW_PROJECTION_KIND: &str = "endpoint.agent-view.v1";
 pub const AGENT_COMPLETIONS_CAPABILITY: &str = "agent_completions";
 pub const AGENT_COMPLETIONS_KIND: &str = "endpoint.agent-completions.v1";
+/// Local patch: the dock (spec 001, ushineko/specs/001-dock.md). Advertised in the
+/// welcome. A client opts in by sending its first `DOCK_CONTROL_KIND` message;
+/// the server sends `DOCK_SURFACE_KIND` only to clients that have.
+pub const DOCK_CAPABILITY: &str = "dock";
+pub const DOCK_SURFACE_KIND: &str = "endpoint.dock.surface.v1";
+pub const DOCK_CONTROL_KIND: &str = "endpoint.dock.control.v1";
+
+/// The dock as drawn by the server, for one client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockSurface {
+    pub boot_id: String,
+    /// Content rows; zero when there is no dock to draw.
+    pub rows: u16,
+    pub cols: u16,
+    /// The rendered dock area, `cols` by `rows`. `None` when `rows` is zero.
+    #[serde(default)]
+    pub frame: Option<super::FrameData>,
+    #[serde(default)]
+    pub panes: Vec<DockSurfacePane>,
+    #[serde(default)]
+    pub splits: Vec<DockSurfaceSplit>,
+    #[serde(default)]
+    pub zoomed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockSurfacePane {
+    /// Stable id for input and actions, e.g. `dock_12`.
+    pub pane_id: String,
+    pub rect: super::SurfaceRect,
+    pub inner_rect: super::SurfaceRect,
+    pub focused: bool,
+    #[serde(default)]
+    pub mouse_reporting: bool,
+    #[serde(default)]
+    pub sgr_pixel_mouse: bool,
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Set while a seeded program waits to be restarted.
+    #[serde(default)]
+    pub restarting_in_ms: Option<u64>,
+}
+
+/// A divider between dock panes, for dragging.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockSurfaceSplit {
+    pub vertical_divider: bool,
+    /// Column of a vertical divider, or row of a horizontal one.
+    pub pos: u16,
+    /// Area the split divides, used to turn a drag into a ratio.
+    pub area: super::SurfaceRect,
+    pub path: Vec<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+    /// A direction from a newer peer; ignored.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Client-to-server dock operations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum DockControl {
+    /// The client's dock width; also the client's opt-in.
+    Width {
+        cols: u16,
+    },
+    Input {
+        pane_id: String,
+        events: Vec<super::ClientPaneInputEvent>,
+    },
+    /// Split a pane; `right` splits side by side, otherwise below.
+    Split {
+        pane_id: String,
+        right: bool,
+    },
+    Close {
+        pane_id: String,
+    },
+    Focus {
+        pane_id: String,
+    },
+    /// Move focus within the dock.
+    FocusDirection {
+        direction: DockDirection,
+    },
+    ToggleZoom,
+    Ratio {
+        path: Vec<bool>,
+        ratio: f32,
+    },
+    /// Resize mode: grow the focused pane toward `direction`.
+    Resize {
+        direction: DockDirection,
+    },
+    Rows {
+        rows: u16,
+    },
+    ResetRows,
+    Reset,
+    /// A newer client's operation this server does not know.
+    #[serde(other)]
+    Unknown,
+}
+
+pub fn dock_control_message(control: &DockControl) -> serde_json::Result<super::ClientMessage> {
+    Ok(super::ClientMessage::EndpointControl {
+        kind: DOCK_CONTROL_KIND.into(),
+        data: serde_json::to_string(control)?,
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointAgentCompletions {
@@ -174,6 +292,7 @@ impl EndpointServerWelcome {
                 HEALTH_CHECK_CAPABILITY.into(),
                 AGENT_VIEW_PROJECTION_CAPABILITY.into(),
                 AGENT_COMPLETIONS_CAPABILITY.into(),
+                DOCK_CAPABILITY.into(),
             ],
             error: None,
         }
@@ -200,6 +319,56 @@ impl EndpointServerWelcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dock_controls_round_trip_and_unknown_ops_decode_as_unknown() {
+        let controls = [
+            DockControl::Width { cols: 120 },
+            DockControl::Split {
+                pane_id: "dock_3".into(),
+                right: true,
+            },
+            DockControl::Ratio {
+                path: vec![false, true],
+                ratio: 0.25,
+            },
+            DockControl::Resize {
+                direction: DockDirection::Up,
+            },
+            DockControl::Reset,
+        ];
+        for control in controls {
+            let message = dock_control_message(&control).unwrap();
+            let super::super::ClientMessage::EndpointControl { kind, data } = message else {
+                panic!("dock controls ride EndpointControl");
+            };
+            assert_eq!(kind, DOCK_CONTROL_KIND);
+            assert_eq!(serde_json::from_str::<DockControl>(&data).unwrap(), control);
+        }
+        assert_eq!(
+            serde_json::from_str::<DockControl>(r#"{"op":"from_the_future","x":1}"#).unwrap(),
+            DockControl::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<DockControl>(r#"{"op":"resize","direction":"diagonal"}"#)
+                .unwrap(),
+            DockControl::Resize {
+                direction: DockDirection::Unknown
+            },
+            "a direction from a newer peer still parses"
+        );
+    }
+
+    #[test]
+    fn the_welcome_advertises_the_dock() {
+        let welcome = EndpointServerWelcome::compatible(Vec::new());
+        assert!(welcome.capabilities.iter().any(|c| c == DOCK_CAPABILITY));
+        assert!(
+            DOCK_SURFACE_KIND.starts_with("endpoint.")
+                && !DOCK_SURFACE_KIND.starts_with("shell.snapshot."),
+            "dock kinds must stay optional controls"
+        );
+    }
 
     fn hello() -> EndpointClientHello {
         EndpointClientHello {
@@ -385,6 +554,7 @@ mod tests {
                 HEALTH_CHECK_CAPABILITY.to_string(),
                 AGENT_VIEW_PROJECTION_CAPABILITY.to_string(),
                 AGENT_COMPLETIONS_CAPABILITY.to_string(),
+                DOCK_CAPABILITY.to_string(),
             ]
         );
     }

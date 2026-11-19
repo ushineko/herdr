@@ -369,6 +369,25 @@ The horizontal bar trades away the parts of the rail that need vertical room: th
 
 `keys.toggle_sidebar_layout` switches placement live without editing the config. It defaults to `prefix+shift+b`, the shift variant of `keys.toggle_sidebar`. A placement toggled by keybinding is client-owned: it is stored beside the sidebar width and collapse state and survives restart, so editing `ui.sidebar_layout` afterwards has no effect until the toggle is used again.
 
+### Dock (local patch)
+
+The dock is a pane area along the bottom of the screen that belongs to no workspace, so the programs in it run once and show in every workspace and tab. Inside it, panes behave like panes: with the keyboard in the dock, the usual split, close, zoom, focus-direction and resize keys act on the dock instead of the workspace. `keys.focus_dock` (default `prefix+u`) moves the keyboard into the dock and back, and clicking a dock pane focuses it. Drag the rule above the dock to change its height, which is shared by every client, or double-click the rule to reset it.
+
+`[ui.dock]` seeds the dock the first time, or after `keys.reset_dock`. Once you split, resize or close panes, that layout is saved with the session and restored, and `reload-config` leaves a running dock alone:
+
+```toml
+[ui.dock]
+rows = 3          # content rows; a rule row is drawn above
+
+[[ui.dock.panes]] # one row, left to right
+label = "usage"
+command = "hayami-tui --sections usage --arrangement row"
+cwd = "~"         # optional
+width = 3         # optional relative share of the width, default 1
+```
+
+A program from the seed is restarted if it exits; a pane created by a split closes when its program exits, like any pane. `keys.toggle_dock` (default `prefix+shift+u`) hides or shows the dock on one client without stopping its programs. Terminals at or below `ui.mobile_width_threshold` show no dock.
+
 ### Sidebar row layouts
 
 The expanded desktop sidebar renders each inner array in `rows` as one line. These are the complete default layouts:

@@ -1780,6 +1780,9 @@ impl ClientShellState {
         if self.scroll_in_progress_selection(mouse, outcome) {
             return;
         }
+        if self.handle_dock_mouse(mouse, outcome) {
+            return;
+        }
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Right) => {

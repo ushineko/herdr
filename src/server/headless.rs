@@ -76,6 +76,7 @@ use crate::server::terminal_attach::paste_payload_for_runtime;
 
 mod bootstrap;
 mod client_views;
+mod dock;
 mod endpoint_requests;
 mod lifecycle;
 mod native_graphics;
@@ -554,6 +555,9 @@ impl HeadlessServer {
                 crate::render_prof::event("render.attempt");
                 let render_request = self.app.render_dirty.take();
                 let pty_dirty = !render_request.pty_sources.is_empty();
+                // Dock panes belong to no tab surface, so neither render path
+                // below draws them; push the dock separately when it changed.
+                let dock_dirty = self.dock_sources_dirty(&render_request.pty_sources);
                 if pty_dirty {
                     crate::render_prof::event("render.attempt.pty_dirty");
                     crate::render_prof::counter(
@@ -596,6 +600,9 @@ impl HeadlessServer {
                     crate::render_prof::event("full_render.invoke");
                     self.render_and_stream();
                 }
+                if dock_dirty {
+                    self.stream_dock_surfaces();
+                }
                 self.app.record_render_attempt(now, !hidden_only);
                 if interactive_due {
                     self.record_interactive_render(now);
@@ -620,6 +627,7 @@ impl HeadlessServer {
                 .pending_alt_screen_reads
                 .iter()
                 .map(|pending| pending.next_deadline())
+                .chain(self.app.next_dock_deadline())
                 .fold(next_deadline, |deadline, pending| {
                     Some(deadline.map_or(pending, |current| current.min(pending)))
                 });
@@ -2357,6 +2365,9 @@ impl HeadlessServer {
                     },
                 )
             }
+            ServerEvent::ClientDockControl { client_id, data } => {
+                self.handle_client_dock_control(client_id, data)
+            }
             ServerEvent::ClientShellPaneInput {
                 client_id,
                 pane_id,
@@ -3280,6 +3291,10 @@ impl HeadlessServer {
 
         // No resize polling needed — server has no terminal.
         // Client resize messages drive size changes instead.
+
+        if self.app.run_due_dock_respawns(now) {
+            changed = true;
+        }
 
         if self
             .app
