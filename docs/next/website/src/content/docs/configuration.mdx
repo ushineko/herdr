@@ -388,6 +388,12 @@ width = 3         # optional relative share of the width, default 1
 
 A program from the seed is restarted if it exits; a pane created by a split closes when its program exits, like any pane. `keys.toggle_dock` (default `prefix+shift+u`) hides or shows the dock on one client without stopping its programs. Terminals at or below `ui.mobile_width_threshold` show no dock.
 
+### Nested tabs (local patch)
+
+A pane slot can hold several panes, one shown at a time, behind a one-row strip at the top of the slot: nested tabs within one split. `keys.stack_new_pane` (default `prefix+t`) starts a shell in the focused pane's directory as a new nested tab of its slot and shows it. `keys.stack_next` (`prefix+period`) and `keys.stack_previous` (`prefix+comma`) cycle the focused slot's tabs; clicking a strip entry shows that tab, and the mouse wheel over the strip cycles. Switching changes only that slot, so the rest of the layout stays where it is, and hidden tabs keep running at the slot's size.
+
+Hidden tabs remain ordinary panes. They appear in `herdr pane list` (with a `stack` object giving their place in the strip), `pane read` and `pane run` work on them, agents in them are detected, and a blocked or finished agent in a hidden tab notifies and shows its status in the strip. Focusing a hidden tab, or a split, resize, swap, move or zoom aimed at it, shows it first. When a slot is down to one tab the strip goes away. Nested tabs are saved with the session; herdr versions without this patch restore the visible tab of each slot and drop the hidden ones.
+
 ### Sidebar row layouts
 
 The expanded desktop sidebar renders each inner array in `rows` as one line. These are the complete default layouts:
