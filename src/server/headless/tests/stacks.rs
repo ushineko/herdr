@@ -33,7 +33,7 @@ fn stacked_server() -> Stacked {
     server.app.state.selected = 0;
     server.app.state.mode = crate::app::Mode::Terminal;
     server.app.state.ensure_test_terminals();
-    for (pane, label) in [(hidden, "yazi"), (shown, "lazygit")] {
+    for (pane, label) in [(hidden, "panel:yazi"), (shown, "panel:lazygit")] {
         let terminal = server.app.state.workspaces[0]
             .terminal_id(pane)
             .cloned()
@@ -110,6 +110,14 @@ async fn a_stack_draws_its_strip_and_only_its_visible_member() {
     assert!(
         text.contains("yazi") && text.contains("lazygit"),
         "strip labels: {text}"
+    );
+    let strip_row = text
+        .lines()
+        .find(|line| line.contains(" yazi ") && line.contains(" lazygit "))
+        .expect("the strip row");
+    assert!(
+        !strip_row.contains("panel:"),
+        "namespaced labels show their last part: {strip_row}"
     );
     assert_eq!(
         surface.panes.len(),

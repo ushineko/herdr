@@ -52,6 +52,16 @@ pub(crate) fn content_rect(tab: &Tab, pane_id: PaneId, pane_inner: Rect) -> Rect
     strip_and_content(tab, pane_id, pane_inner).1
 }
 
+/// A label as the strip shows it: namespaced labels such as `panel:yazi` or
+/// `monitor:btop` show only their last part, since the strip already says
+/// these panes belong together.
+pub(crate) fn strip_label_text(label: &str) -> &str {
+    match label.rsplit_once(':') {
+        Some((_, name)) if !name.trim().is_empty() => name.trim(),
+        _ => label,
+    }
+}
+
 /// A member's strip label: its manual label, else its agent, else its title,
 /// else "shell". A hidden member whose agent is blocked or done is prefixed
 /// with that state's glyph.
@@ -62,7 +72,8 @@ fn member_label(app: &AppState, tab: &Tab, pane_id: PaneId, hidden: bool) -> Str
         .and_then(|terminal| {
             terminal
                 .manual_label
-                .clone()
+                .as_deref()
+                .map(|label| strip_label_text(label).to_string())
                 .or_else(|| terminal.effective_display_agent())
                 .or_else(|| terminal.effective_agent_label().map(str::to_string))
                 .or_else(|| terminal.effective_title())
@@ -163,6 +174,16 @@ pub(super) fn render_stack_strips(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn namespaced_labels_show_their_last_part() {
+        assert_eq!(strip_label_text("panel:yazi"), "yazi");
+        assert_eq!(strip_label_text("monitor:btop"), "btop");
+        assert_eq!(strip_label_text("a:b:c"), "c");
+        assert_eq!(strip_label_text("plain"), "plain");
+        assert_eq!(strip_label_text("trailing:"), "trailing:");
+    }
+
     use super::*;
     use crate::workspace::Workspace;
 

@@ -246,7 +246,8 @@ impl HeadlessServer {
                 let label = layout
                     .panes
                     .get(pane_id)
-                    .and_then(|pane| pane.label().map(str::to_owned))
+                    .and_then(|pane| pane.label())
+                    .map(|label| crate::ui::strip_label_text(label).to_owned())
                     .unwrap_or_else(|| "shell".to_owned());
                 let text = format!(
                     " {} ",

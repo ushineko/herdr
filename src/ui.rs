@@ -6,7 +6,7 @@ mod release_notes;
 mod scrollbar;
 mod sidebar;
 mod stack_strip;
-pub(crate) use self::stack_strip::{strip_and_content, strip_entries};
+pub(crate) use self::stack_strip::{strip_and_content, strip_entries, strip_label_text};
 mod status;
 mod tab_surface;
 mod text;
