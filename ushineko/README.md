@@ -9,13 +9,20 @@ herdrdev/herdr on their behalf: herdr does not accept unsolicited pull requests
 (see its `CONTRIBUTING.md`). Everything here is published in case it is useful
 to someone, with no support promise.
 
+![herdr with the fork's features: the horizontal spaces bar with agent status per space, yazi and lazygit as nested tabs in one slot on the right, and a dock along the bottom shared by every workspace](screenshot.png)
+
+*The spaces bar across the top (a blocked agent in `web`, working ones in
+`infra` and `docs`), yazi and lazygit as nested tabs in the right-hand slot,
+and the dock along the bottom, which shows the same programs in every
+workspace. Demo content.*
+
 ## Features
 
 | Feature | Branch | Spec | Status |
 | --- | --- | --- | --- |
 | Horizontal spaces bar: spaces in a two-row bar across the top instead of the left rail, with folded agent status per space | `ushineko/spaces-bar` | [000](specs/000-spaces-bar.md) | Complete |
 | Dock: a pane area along the bottom that belongs to no workspace and shows in every one | `ushineko/dock` | [001](specs/001-dock.md) | Complete |
-| Nested tabs: several panes in one layout slot behind a tab strip | `ushineko/pane-stacks` | [002](specs/002-nested-tabs.md) | Draft spec |
+| Nested tabs: several panes in one layout slot behind a tab strip | `ushineko/pane-stacks` | [002](specs/002-nested-tabs.md) | Implemented (in review) |
 
 Each feature is a branch stacked on the one before it and reviewed as a pull
 request inside this fork. `ushineko/features` is the integration branch that
