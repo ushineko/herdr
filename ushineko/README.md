@@ -20,12 +20,13 @@ workspace. Demo content.*
 
 | Feature | Branch | Spec | Status |
 | --- | --- | --- | --- |
-| Horizontal spaces bar: spaces in a two-row bar across the top instead of the left rail, with folded agent status per space | `ushineko/spaces-bar` | [000](specs/000-spaces-bar.md) | Complete |
-| Dock: a pane area along the bottom that belongs to no workspace and shows in every one | `ushineko/dock` | [001](specs/001-dock.md) | Complete |
-| Nested tabs: several panes in one layout slot behind a tab strip | `ushineko/pane-stacks` | [002](specs/002-nested-tabs.md) | Implemented (in review) |
+| Horizontal spaces bar: spaces in a two-row bar across the top instead of the left rail, with folded agent status per space | [`ushineko/spaces-bar`](https://github.com/ushineko/herdr/pull/1) | [000](https://github.com/ushineko/herdr/blob/ushineko/spaces-bar/ushineko/specs/000-spaces-bar.md) | Complete |
+| Dock: a pane area along the bottom that belongs to no workspace and shows in every one | [`ushineko/dock`](https://github.com/ushineko/herdr/pull/2) | [001](https://github.com/ushineko/herdr/blob/ushineko/dock/ushineko/specs/001-dock.md) | Complete |
+| Nested tabs: several panes in one layout slot behind a tab strip | [`ushineko/pane-stacks`](https://github.com/ushineko/herdr/pull/3) | [002](https://github.com/ushineko/herdr/blob/ushineko/pane-stacks/ushineko/specs/002-nested-tabs.md) | Implemented (in review) |
 
 Each feature is a branch stacked on the one before it and reviewed as a pull
-request inside this fork. `ushineko/features` is the integration branch that
+request inside this fork (the branch links open the PRs). A feature's spec lives
+on its branch until the PR is merged into `ushineko/features`. `ushineko/features` is the integration branch that
 builds are made from.
 
 ## Base

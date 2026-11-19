@@ -15,6 +15,6 @@ patches upstream.
 
 Builds stay compatible with stock herdr clients, servers and saved sessions.
 
-- What each feature does, why, and how it was tested: [`ushineko/README.md`](../ushineko/README.md) and the specs in [`ushineko/specs/`](../ushineko/specs/).
+- What each feature does, why, and how it was tested: [`ushineko/README.md`](../ushineko/README.md) and the specs: [000 spaces bar](https://github.com/ushineko/herdr/blob/ushineko/spaces-bar/ushineko/specs/000-spaces-bar.md), [001 dock](https://github.com/ushineko/herdr/blob/ushineko/dock/ushineko/specs/001-dock.md), [002 nested tabs](https://github.com/ushineko/herdr/blob/ushineko/pane-stacks/ushineko/specs/002-nested-tabs.md).
 - Branches, building and moving to new herdr releases: [`ushineko/MAINTAINING.md`](../ushineko/MAINTAINING.md).
 - herdr itself (installation, configuration, everything else): the upstream [README](../README.md) and [herdr.dev](https://herdr.dev).

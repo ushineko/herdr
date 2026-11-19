@@ -15,9 +15,9 @@ requests and tells coding agents to refuse to open them. In local checkouts:
 | Branch | Content |
 | --- | --- |
 | `ushineko/features` | Integration: the herdr release tag plus every merged feature. Builds come from here. |
-| `ushineko/spaces-bar` | Horizontal spaces bar ([spec 000](specs/000-spaces-bar.md)). |
-| `ushineko/dock` | Dock ([spec 001](specs/001-dock.md)), on top of the spaces bar. |
-| `ushineko/pane-stacks` | Nested tabs ([spec 002](specs/002-nested-tabs.md)), on top of the dock. |
+| `ushineko/spaces-bar` | Horizontal spaces bar ([spec 000](https://github.com/ushineko/herdr/blob/ushineko/spaces-bar/ushineko/specs/000-spaces-bar.md)). |
+| `ushineko/dock` | Dock ([spec 001](https://github.com/ushineko/herdr/blob/ushineko/dock/ushineko/specs/001-dock.md)), on top of the spaces bar. |
+| `ushineko/pane-stacks` | Nested tabs ([spec 002](https://github.com/ushineko/herdr/blob/ushineko/pane-stacks/ushineko/specs/002-nested-tabs.md)), on top of the dock. |
 
 The features are stacked because they touch the same client layout code. Each
 one is a pull request into the branch below it, and the bottom one targets
