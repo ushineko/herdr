@@ -27,13 +27,19 @@ git fetch -q origin "$ref"
 git tag -a "$tag" -m "$tag" "origin/$ref"
 git push -q origin "$tag"
 
+# Runs that already exist for this ref (a retried release reuses the tag name),
+# so the one dispatched below is told apart from them.
+previous=$(gh run list --repo "$repo" --workflow build-artifacts-manual.yml \
+  --branch "$tag" --limit 20 --json databaseId -q '[.[].databaseId] | max // 0')
+
 gh workflow run build-artifacts-manual.yml --repo "$repo" --ref "$tag" \
   -f build_group=all -f libghostty_optimize=ReleaseFast -f libghostty_simd=true
 
 run_id=""
 for _ in $(seq 1 30); do
   run_id=$(gh run list --repo "$repo" --workflow build-artifacts-manual.yml \
-    --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId // empty')
+    --branch "$tag" --limit 5 --json databaseId \
+    -q "[.[].databaseId | select(. > $previous)] | min // empty")
   [ -n "$run_id" ] && break
   sleep 2
 done
