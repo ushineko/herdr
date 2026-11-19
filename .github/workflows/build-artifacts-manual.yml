@@ -190,7 +190,10 @@ jobs:
 
   build-windows:
     if: ${{ inputs.build_group == 'windows' || inputs.build_group == 'all' }}
-    runs-on: windows-latest
+    # Fork patch: pinned like release.yml. windows-latest ships MSVC 14.52,
+    # whose STL rejects the clang bundled with Zig 0.16 ("expected Clang 22")
+    # when simdutf is built for ReleaseFast + SIMD.
+    runs-on: windows-2022
     env:
       LIBGHOSTTY_VT_OPTIMIZE: ${{ inputs.libghostty_optimize }}
       LIBGHOSTTY_VT_SIMD: ${{ inputs.libghostty_simd }}
