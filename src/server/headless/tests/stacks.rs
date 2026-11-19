@@ -538,3 +538,90 @@ async fn a_blocked_agent_in_a_hidden_member_shows_its_glyph_in_the_strip() {
     );
     shutdown_test_runtimes(&mut server);
 }
+
+#[tokio::test]
+async fn moving_a_stacked_pane_to_a_new_workspace_takes_its_stack() {
+    let Stacked {
+        mut server,
+        hidden,
+        shown,
+        ..
+    } = stacked_server();
+    let hidden_id = public(&server, hidden);
+    let shown_id = public(&server, shown);
+    let response = api_call(
+        &mut server,
+        "pane.move",
+        serde_json::json!({"pane_id": hidden_id, "destination": {"type": "new_workspace"}}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    let workspaces = &server.app.state.workspaces;
+    assert_eq!(workspaces.len(), 2);
+    let moved = &workspaces[1].tabs[0];
+    assert_eq!(
+        moved.layout.pane_ids(),
+        vec![hidden],
+        "the named pane is shown"
+    );
+    assert!(moved.is_hidden_pane(shown), "its stack came along");
+    assert_eq!(
+        workspaces[0].tabs[0].panes.len(),
+        1,
+        "only the left pane stays"
+    );
+    for ws in workspaces {
+        ws.assert_invariants_for_test();
+    }
+    assert_eq!(
+        server.app.parse_pane_id(&hidden_id),
+        Some((1, hidden)),
+        "the old public id still resolves"
+    );
+    assert_eq!(
+        server.app.parse_pane_id(&shown_id),
+        Some((1, shown)),
+        "so does a stack-mate's"
+    );
+    shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
+async fn moving_a_stack_into_another_workspaces_tab_numbers_every_member() {
+    let Stacked {
+        mut server,
+        hidden,
+        shown,
+        ..
+    } = stacked_server();
+    let mut other = crate::workspace::Workspace::test_new("other");
+    let target = other.tabs[0].root_pane;
+    other.insert_test_runtime(
+        target,
+        crate::terminal::TerminalRuntime::test_with_screen_bytes(40, 20, b"OTHER"),
+    );
+    server.app.state.workspaces.push(other);
+    server.app.state.ensure_test_terminals();
+    let (shown_id, target_id, tab_id) = (
+        public(&server, shown),
+        server.app.public_pane_id(1, target).unwrap(),
+        server.app.public_tab_id(1, 0).unwrap(),
+    );
+    let response = api_call(
+        &mut server,
+        "pane.move",
+        serde_json::json!({
+            "pane_id": shown_id,
+            "destination": {"type": "tab", "tab_id": tab_id, "target_pane_id": target_id, "split": "right"},
+        }),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    let ws = &server.app.state.workspaces[1];
+    assert!(ws.tabs[0].is_hidden_pane(hidden), "the stack arrived");
+    assert!(
+        ws.public_pane_number(hidden).is_some(),
+        "its hidden member is numbered"
+    );
+    ws.assert_invariants_for_test();
+    server.app.state.workspaces[0].assert_invariants_for_test();
+    shutdown_test_runtimes(&mut server);
+}

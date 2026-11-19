@@ -505,7 +505,8 @@ mod tests {
     /// Audit theme A: a one-slot stack is not a tab's last pane.
     #[test]
     fn a_member_of_a_one_slot_stack_is_not_the_last_pane() {
-        for path in ["close", "death", "move"] {
+        // Moves take the whole slot: see `moving_a_stacked_pane_*` below.
+        for path in ["close", "death"] {
             for take_root in [true, false] {
                 let mut ws = Workspace::test_new("one-slot");
                 let root = ws.tabs[0].root_pane;
@@ -515,15 +516,10 @@ mod tests {
                 } else {
                     (added, root)
                 };
-                match path {
-                    "close" => assert!(!ws.close_pane(pane), "{path}: workspace stays"),
-                    "death" => assert!(!ws.remove_pane(pane), "{path}: workspace stays"),
-                    _ => {
-                        let taken = ws.take_pane_for_move(pane).expect("pane is taken");
-                        assert_eq!(taken.removed_tab_idx, None, "{path}: tab stays");
-                        assert!(!taken.workspace_empty);
-                        ws.unregister_moved_pane(pane);
-                    }
+                if path == "close" {
+                    assert!(!ws.close_pane(pane), "{path}: workspace stays");
+                } else {
+                    assert!(!ws.remove_pane(pane), "{path}: workspace stays");
                 }
                 assert_eq!(ws.tabs.len(), 1, "{path} {pane:?}: the tab stays");
                 let tab = &ws.tabs[0];
@@ -537,6 +533,93 @@ mod tests {
                 ws.assert_invariants_for_test();
             }
         }
+    }
+
+    #[test]
+    fn moving_a_stacked_pane_moves_its_whole_slot_to_another_tab() {
+        let (mut ws, left, right, added) = stacked_split();
+        let other = ws.test_add_tab(Some("other"));
+        let target = ws.tabs[other].root_pane;
+        ws.switch_tab(0);
+
+        let taken = ws.take_pane_for_move(right).expect("the slot is taken");
+        assert_eq!(
+            taken.removed_tab_idx, None,
+            "the source tab keeps its other slot"
+        );
+        assert_eq!(
+            taken.moved.pane_id, right,
+            "a hidden pane is shown before it moves"
+        );
+        assert_eq!(taken.moved.pane_ids(), vec![right, added]);
+        let tab = &ws.tabs[0];
+        assert_eq!(tab.layout.pane_ids(), vec![left]);
+        assert_eq!(tab.panes.len(), 1, "the whole stack left");
+
+        ws.insert_moved_pane_into_tab(
+            other,
+            target,
+            taken.moved,
+            ratatui::layout::Direction::Horizontal,
+            0.5,
+            true,
+        )
+        .ok()
+        .expect("inserted next to the target");
+        let tab = &ws.tabs[other];
+        assert_eq!(tab.layout.pane_ids(), vec![target, right]);
+        let stack = tab.stack_of(added).expect("the stack arrived");
+        assert_eq!(stack.panes, vec![right, added], "strip order kept");
+        assert_eq!(stack.visible(), Some(right));
+        ws.assert_invariants_for_test();
+    }
+
+    #[test]
+    fn moving_a_one_slot_stack_takes_its_tab_and_rebuilds_it_elsewhere() {
+        let mut ws = Workspace::test_new("one-slot");
+        let root = ws.tabs[0].root_pane;
+        let added = ws.test_stack(root);
+        ws.test_add_tab(Some("stays"));
+        let taken = ws.take_pane_for_move(added).expect("the slot is taken");
+        assert_eq!(taken.removed_tab_idx, Some(0), "the slot was the whole tab");
+        let (events, _) = tokio::sync::mpsc::channel(4);
+        let new_tab = ws.create_tab_from_existing_pane(
+            taken.moved,
+            None,
+            events.clone(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            std::sync::Arc::new(crate::render_signal::RenderSignal::new()),
+        );
+        let tab = &ws.tabs[new_tab];
+        assert_eq!(tab.layout.pane_ids(), vec![added]);
+        assert!(tab.is_hidden_pane(root));
+        ws.assert_invariants_for_test();
+
+        let taken = ws
+            .take_pane_for_move(root)
+            .expect("the slot is taken again");
+        let moved_ids = taken.moved.pane_ids();
+        let other = Workspace::from_existing_pane(
+            None,
+            None,
+            std::path::PathBuf::from("/tmp"),
+            taken.moved,
+            events,
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            std::sync::Arc::new(crate::render_signal::RenderSignal::new()),
+        );
+        assert_eq!(
+            other.tabs[0].panes.len(),
+            2,
+            "a new workspace gets the stack"
+        );
+        for id in moved_ids {
+            assert!(
+                other.public_pane_number(id).is_some(),
+                "every member is numbered"
+            );
+        }
+        other.assert_invariants_for_test();
     }
 
     #[test]

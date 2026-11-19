@@ -245,10 +245,15 @@ impl Workspace {
         render_dirty: Arc<RenderSignal>,
     ) -> Self {
         let id = generate_workspace_id();
-        let root_pane = moved.pane_id;
+        // Local patch (spec 002): a moved stack's members are numbered too.
+        let moved_ids = moved.pane_ids();
         let tab = Tab::from_existing_pane(1, tab_label, moved, events, render_notify, render_dirty);
-        let mut public_pane_numbers = HashMap::new();
-        public_pane_numbers.insert(root_pane, 1);
+        let public_pane_numbers: HashMap<PaneId, usize> = moved_ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (*id, index + 1))
+            .collect();
+        let next_public_pane_number = moved_ids.len() + 1;
         let (cached_git_space, cached_auto_label, cached_git_status_key) =
             discover_workspace_git_identity(&identity_cwd);
         Self {
@@ -265,7 +270,7 @@ impl Workspace {
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
             public_pane_numbers,
-            next_public_pane_number: 2,
+            next_public_pane_number,
             next_public_tab_number: 2,
             tabs: vec![tab],
             active_tab: 0,
@@ -947,8 +952,9 @@ impl Workspace {
 
     pub(crate) fn take_pane_for_move(&mut self, pane_id: PaneId) -> Option<TakenPane> {
         let tab_idx = self.find_tab_index_for_pane(pane_id)?;
-        // Local patch (spec 002): count pane states, not layout leaves.
-        let pane_count = self.tabs[tab_idx].panes.len();
+        // Local patch (spec 002): a move takes the whole slot, stack included,
+        // so the tab empties when its last leaf goes.
+        let pane_count = self.tabs[tab_idx].layout.pane_count();
         if pane_count <= 1 {
             let mut tab = self.tabs.remove(tab_idx);
             let moved = tab.take_pane_for_move(pane_id)?;
@@ -978,13 +984,12 @@ impl Workspace {
         focus: bool,
     ) -> Result<PaneId, MovedPane> {
         let pane_id = moved.pane_id;
+        let moved_ids = moved.pane_ids();
         let Some(tab) = self.tabs.get_mut(tab_idx) else {
             return Err(moved);
         };
         tab.insert_existing_pane(target_pane_id, moved, direction, ratio, focus)?;
-        if !self.public_pane_numbers.contains_key(&pane_id) {
-            self.register_new_pane_with_number(pane_id, self.next_public_pane_number);
-        }
+        self.register_moved_panes(&moved_ids);
         Ok(pane_id)
     }
 
@@ -998,7 +1003,7 @@ impl Workspace {
     ) -> usize {
         let number = self.next_public_tab_number;
         self.next_public_tab_number += 1;
-        let pane_id = moved.pane_id;
+        let moved_ids = moved.pane_ids();
         let (events, render_notify, render_dirty) = self
             .active_tab()
             .map(|tab| {
@@ -1015,11 +1020,19 @@ impl Workspace {
             ));
         let tab =
             Tab::from_existing_pane(number, label, moved, events, render_notify, render_dirty);
-        if !self.public_pane_numbers.contains_key(&pane_id) {
-            self.register_new_pane_with_number(pane_id, self.next_public_pane_number);
-        }
+        self.register_moved_panes(&moved_ids);
         self.tabs.push(tab);
         self.tabs.len() - 1
+    }
+
+    /// Number moved panes that are new to this workspace (spec 002: every
+    /// member of a moved stack).
+    fn register_moved_panes(&mut self, pane_ids: &[PaneId]) {
+        for pane_id in pane_ids {
+            if !self.public_pane_numbers.contains_key(pane_id) {
+                self.register_new_pane_with_number(*pane_id, self.next_public_pane_number);
+            }
+        }
     }
 
     pub(crate) fn unregister_moved_pane(&mut self, pane_id: PaneId) {

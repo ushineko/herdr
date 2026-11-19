@@ -322,11 +322,16 @@ in the audit.
       scrollback. (`switching_changes_only_the_slot_and_keeps_order`, `hidden_members_are_sized_like_the_visible_one`, `computing_the_active_tab_with_resize_sizes_hidden_members_like_the_visible_one`; output kept across a switch in the integration test and E2E step 2.)
 - [x] Closing or exiting the visible pane shows its neighbour. When one pane
       is left, the slot is a plain pane and draws no strip. (`closing_the_visible_member_shows_its_neighbour_then_collapses`, `closing_the_last_visible_member_shows_the_previous_one`; E2E step 4.)
-- [ ] Split, swap, move-to-tab and zoom act on the whole slot. Split, swap and zoom do
-      (`swap_and_zoom_act_on_the_whole_slot`; a split keeps the stack on its
-      leaf). **Open:** `pane move` moves only the named pane, its slot passing
-      to the next member (part 1); moving a whole slot is not built. Needs a
-      decision: build it, or amend this criterion.
+- [x] Split, swap, move-to-tab and zoom act on the whole slot. Split, swap
+      and zoom: `swap_and_zoom_act_on_the_whole_slot` (a split keeps the stack
+      on its leaf). Move (built 2026-11-19 at the user's request): `pane move`
+      on any member shows it, then carries the whole stack to the destination
+      (existing tab, new tab or new workspace), keeping strip order; every
+      member is renumbered across workspaces and its old public id still
+      resolves (`moving_a_stacked_pane_moves_its_whole_slot_to_another_tab`,
+      `moving_a_one_slot_stack_takes_its_tab_and_rebuilds_it_elsewhere`,
+      `moving_a_stacked_pane_to_a_new_workspace_takes_its_stack`,
+      `moving_a_stack_into_another_workspaces_tab_numbers_every_member`).
 - [x] Focusing a hidden pane from Go To, an agent-list jump, a notification
       or `herdr pane focus` makes it visible first. (Part 3: `focus_pane_in_workspace` shows it; `focusing_a_hidden_member_shows_it`.)
 - [x] Hidden panes appear in agent lists, Go To and notifications, like any
@@ -429,9 +434,8 @@ shared with splits. "Last pane" now counts pane states in
 `Workspace::{remove_pane, close_pane, take_pane_for_move, close_focused}`,
 `Tab::detach_pane`, the close-confirmation checks and the API's
 layout-update check. Plugin cleanup, worktree-removal shutdown and the
-agent-resume terminal lookup use `all_pane_ids`. Moving a stacked pane moves
-that pane only, its slot passing to the next member; moving a whole slot is
-built on this in part 3. Stacks are not yet saved or restored (part 2), and
+agent-resume terminal lookup use `all_pane_ids`. Moving a stacked pane moved
+that pane only at this stage; whole-slot moves came later (see Part 6). Stacks are not yet saved or restored (part 2), and
 nothing outside tests creates one (part 3). Verification: lint clean, nextest
 4134 passed, 16 stack tests; six deliberate breakages, each caught.
 
@@ -497,6 +501,15 @@ branch, against `ushineko/dock` (scenes without stacks): server render rows
 3.0% slower on average (12 cases, from 9% faster to 6% slower), client
 navigator 7.4% faster (14 cases). The spread covers both signs, so no
 regression is established; stacked scenes are not in upstream's benchmark.
+
+**Part 6 (whole-slot moves), 2026-11-19.** `MovedPane` carries a
+`MovedStack` (strip order and the hidden members' states);
+`Tab::take_pane_for_move` shows the named member and takes its whole slot, and
+every destination rebuilds the stack (`MovedPane::install`). A tab empties on
+a move when its last leaf goes. Cross-workspace moves unregister, renumber and
+alias every member. Verification: lint clean, nextest 4182 passed; seven
+deliberate breakages, each caught once two test gaps were closed
+(cross-workspace numbering, stack-mates' old ids).
 
 ### E2E results (2026-11-19, release build `d9d5a070`+tests, throwaway `--session` under `tmux -L`)
 

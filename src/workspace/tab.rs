@@ -16,6 +16,43 @@ pub(crate) type DetachedPane = (PaneId, TerminalId);
 pub(crate) struct MovedPane {
     pub pane_id: PaneId,
     pub pane_state: PaneState,
+    /// Local patch (spec 002): a moved slot carries its whole stack. The
+    /// members in strip order (including `pane_id`, the visible one) and the
+    /// hidden members' states. `None` for a plain pane.
+    pub stack: Option<MovedStack>,
+}
+
+pub(crate) struct MovedStack {
+    pub order: Vec<PaneId>,
+    pub hidden: Vec<(PaneId, PaneState)>,
+}
+
+impl MovedPane {
+    /// Every pane that moves: the slot's pane, then its hidden members.
+    pub(crate) fn pane_ids(&self) -> Vec<PaneId> {
+        let mut ids = vec![self.pane_id];
+        if let Some(stack) = &self.stack {
+            ids.extend(stack.hidden.iter().map(|(id, _)| *id));
+        }
+        ids
+    }
+
+    /// Insert the moved pane's state, and its stack if any, into a tab whose
+    /// layout already holds `pane_id` as a leaf.
+    fn install(self, tab: &mut Tab) {
+        tab.panes.insert(self.pane_id, self.pane_state);
+        if let Some(stack) = self.stack {
+            for (id, state) in stack.hidden {
+                tab.panes.insert(id, state);
+            }
+            if let Some(active) = stack.order.iter().position(|id| *id == self.pane_id) {
+                tab.stacks.push(super::PaneStack {
+                    panes: stack.order,
+                    active,
+                });
+            }
+        }
+    }
 }
 
 pub struct NewPane {
@@ -443,15 +480,13 @@ impl Tab {
         render_notify: Arc<Notify>,
         render_dirty: Arc<RenderSignal>,
     ) -> Self {
-        let mut panes = HashMap::new();
         let pane_id = moved.pane_id;
-        panes.insert(pane_id, moved.pane_state);
-        Self {
+        let mut tab = Self {
             custom_name,
             number,
             root_pane: pane_id,
             layout: TileLayout::from_saved(Node::Pane(pane_id), pane_id),
-            panes,
+            panes: HashMap::new(),
             #[cfg(test)]
             runtimes: HashMap::new(),
             zoomed: false,
@@ -459,23 +494,48 @@ impl Tab {
             events,
             render_notify,
             render_dirty,
-        }
+        };
+        moved.install(&mut tab);
+        tab
     }
 
+    /// Take a pane's whole slot out of the tab for a move. A stacked pane is
+    /// shown first and its stack moves with it (spec 002: moves act on the
+    /// slot).
     pub(crate) fn take_pane_for_move(&mut self, pane_id: PaneId) -> Option<MovedPane> {
         if !self.panes.contains_key(&pane_id) {
             return None;
         }
+        self.reveal_pane(pane_id);
+        let order = self.stack_of(pane_id).map(|stack| stack.panes.clone());
+        let members = order.clone().unwrap_or_else(|| vec![pane_id]);
 
-        if self.panes.len() > 1 {
-            self.detach_from_layout(pane_id);
+        if self.layout.pane_count() > 1 {
+            if members.contains(&self.root_pane) {
+                if let Some(next_root) =
+                    self.layout.pane_ids().into_iter().find(|id| *id != pane_id)
+                {
+                    self.root_pane = next_root;
+                }
+            }
+            self.layout.close_pane(pane_id);
         }
+        self.stacks.retain(|stack| !stack.panes.contains(&pane_id));
 
         let pane_state = self.panes.remove(&pane_id)?;
+        let stack = order.map(|order| MovedStack {
+            hidden: order
+                .iter()
+                .filter(|id| **id != pane_id)
+                .filter_map(|id| Some((*id, self.panes.remove(id)?)))
+                .collect(),
+            order,
+        });
         self.zoomed = false;
         Some(MovedPane {
             pane_id,
             pane_state,
+            stack,
         })
     }
 
@@ -494,7 +554,7 @@ impl Tab {
             return Err(moved);
         }
         let pane_id = moved.pane_id;
-        self.panes.insert(pane_id, moved.pane_state);
+        moved.install(self);
         self.zoomed = false;
         Ok(pane_id)
     }
