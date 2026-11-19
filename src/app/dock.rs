@@ -102,6 +102,9 @@ pub(crate) struct Dock {
     pub seed: DockConfig,
     /// Panes closed on purpose whose runtime exit is still in flight.
     retired: HashSet<PaneId>,
+    /// The drawn dock is out of date for a reason other than pty output, which
+    /// the render loop tracks itself. Full renders redraw the dock only then.
+    pub needs_redraw: bool,
 }
 
 impl Default for Dock {
@@ -113,6 +116,7 @@ impl Default for Dock {
             width: DEFAULT_DOCK_WIDTH,
             seed: DockConfig::default(),
             retired: HashSet::new(),
+            needs_redraw: false,
         }
     }
 }
@@ -166,15 +170,8 @@ pub(crate) enum DockExit {
 pub(crate) fn expand_cwd(cwd: Option<&std::path::Path>) -> PathBuf {
     match cwd {
         Some(path) => crate::worktree::expand_tilde_path(&path.to_string_lossy()),
-        None => dirs_home(),
+        None => crate::worktree::home_dir().unwrap_or_else(|| PathBuf::from("/")),
     }
-}
-
-fn dirs_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 impl Dock {
@@ -315,11 +312,12 @@ impl Dock {
         let mut remaining = total;
         for (index, entry) in seed.panes.iter().enumerate() {
             if index + 1 < seed.panes.len() {
-                let target = *ids.last().expect("a pane per entry so far");
+                let Some(&target) = ids.last() else { break };
                 let ratio = f32::from(entry.width) / remaining as f32;
-                let next = layout
-                    .split_pane(target, Direction::Horizontal, ratio)
-                    .expect("target is in the layout");
+                let Some(next) = layout.split_pane(target, Direction::Horizontal, ratio) else {
+                    tracing::warn!(label = %entry.label, "could not split the dock for a seeded pane");
+                    break;
+                };
                 ids.push(next);
                 remaining -= u32::from(entry.width);
             }
@@ -683,7 +681,7 @@ impl Dock {
                         Some((label, command)) => DockPaneOrigin::Seeded { label, command },
                         None => DockPaneOrigin::User,
                     };
-                let cwd = saved.map_or_else(dirs_home, |pane| pane.cwd.clone());
+                let cwd = saved.map_or_else(|| expand_cwd(None), |pane| pane.cwd.clone());
                 (*new, DockPane::new(origin, cwd))
             })
             .collect::<HashMap<_, _>>();
@@ -735,6 +733,9 @@ impl crate::app::App {
     }
 
     fn spawn_dock_processes(&mut self, spawns: Vec<SpawnRequest>) {
+        if !spawns.is_empty() {
+            self.state.dock.needs_redraw = true;
+        }
         let now = Instant::now();
         for spawn in spawns {
             let terminal_id = TerminalId::alloc();
@@ -807,6 +808,7 @@ impl crate::app::App {
     }
 
     fn dock_changed(&mut self) {
+        self.state.dock.needs_redraw = true;
         self.resize_dock_runtimes();
         self.render_dirty.request_generic();
         self.render_notify.notify_one();
@@ -879,7 +881,9 @@ impl crate::app::App {
     pub(crate) fn run_due_dock_respawns(&mut self, now: Instant) -> bool {
         let spawns = self.state.dock.due_respawns(now);
         if spawns.is_empty() {
-            return self.dock_waiting();
+            let counting_down = self.dock_waiting();
+            self.state.dock.needs_redraw |= counting_down;
+            return counting_down;
         }
         self.spawn_dock_processes(spawns);
         true
@@ -1021,13 +1025,14 @@ impl crate::app::App {
 /// Resize-mode step for dividers, as a share of the split.
 const DOCK_RESIZE_STEP: f32 = 0.05;
 
-fn nav(direction: crate::protocol::endpoint::DockDirection) -> NavDirection {
+fn nav(direction: crate::protocol::endpoint::DockDirection) -> Option<NavDirection> {
     use crate::protocol::endpoint::DockDirection;
     match direction {
-        DockDirection::Left => NavDirection::Left,
-        DockDirection::Right => NavDirection::Right,
-        DockDirection::Up => NavDirection::Up,
-        DockDirection::Down => NavDirection::Down,
+        DockDirection::Left => Some(NavDirection::Left),
+        DockDirection::Right => Some(NavDirection::Right),
+        DockDirection::Up => Some(NavDirection::Up),
+        DockDirection::Down => Some(NavDirection::Down),
+        DockDirection::Unknown => None,
     }
 }
 
@@ -1060,7 +1065,8 @@ impl crate::app::App {
             DockControl::Close { pane_id } => pane(&pane_id).is_some_and(|id| self.dock_close(id)),
             DockControl::Focus { pane_id } => pane(&pane_id).is_some_and(|id| self.dock_focus(id)),
             DockControl::FocusDirection { direction } => {
-                let changed = self.state.dock.focus_direction(nav(direction));
+                let changed = nav(direction)
+                    .is_some_and(|direction| self.state.dock.focus_direction(direction));
                 if changed {
                     self.state.mark_session_dirty();
                 }
@@ -1081,7 +1087,8 @@ impl crate::app::App {
                     self.dock_set_rows(next);
                     true
                 }
-                _ => self.dock_resize_focused(nav(direction), DOCK_RESIZE_STEP),
+                _ => nav(direction)
+                    .is_some_and(|direction| self.dock_resize_focused(direction, DOCK_RESIZE_STEP)),
             },
             DockControl::Rows { rows } => {
                 self.dock_set_rows(rows);

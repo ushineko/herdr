@@ -321,6 +321,26 @@ fn pane_keys_act_on_the_dock_only_while_it_has_focus() {
 }
 
 #[test]
+fn a_dock_that_closes_gives_the_keyboard_back_without_a_redraw() {
+    let mut state = docked_state();
+    prefixed(&mut state, KeyCode::Char('u'), KeyModifiers::empty());
+    assert!(state.dock_focused);
+    let local = super::super::ClientEndpointId::Local;
+    assert!(state.set_endpoint_dock_surface(&local, surface("boot-1", 0)));
+    assert!(
+        !state.dock_focused,
+        "a closed dock cannot hold the keyboard"
+    );
+
+    assert!(state.set_endpoint_dock_surface(&local, two_pane_surface()));
+    state.compose(COLS, ROWS).expect("frame");
+    assert!(
+        !state.dock_has_focus(),
+        "a dock that comes back does not take the keyboard by itself"
+    );
+}
+
+#[test]
 fn toggle_dock_hides_it_here_and_remembers() {
     let mut state = docked_state();
     prefixed(&mut state, KeyCode::Char('u'), KeyModifiers::empty());

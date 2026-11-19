@@ -113,6 +113,7 @@ impl ClientShellState {
     pub(crate) fn select_unavailable_local(&mut self) {
         self.reset_endpoint_projection();
         self.active_endpoint_id = ClientEndpointId::Local;
+        self.dock_focused = false;
         self.mode = ClientShellMode::Terminal;
         self.snapshot = None;
         self.graphics.set_scope("local:unavailable");
@@ -197,6 +198,7 @@ impl ClientShellState {
                 endpoint.dock_surface = None;
             }
         }
+        self.release_dock_focus_if_gone();
     }
 
     /// Local patch: store an endpoint's dock surface. Surfaces from a previous
@@ -221,6 +223,7 @@ impl ClientShellState {
             return false;
         }
         endpoint.dock_surface = Some(Box::new(surface));
+        self.release_dock_focus_if_gone();
         true
     }
 
@@ -298,6 +301,8 @@ impl ClientShellState {
         let agent_scroll = self.agent_scroll;
         if switching_endpoint {
             self.active_endpoint_id = endpoint_id.clone();
+            // Another machine's dock does not inherit the keyboard.
+            self.dock_focused = false;
             self.pane_surface = None;
             self.pending_pane_surface = None;
         }

@@ -255,6 +255,17 @@ async fn malformed_or_unknown_dock_controls_are_ignored() {
         client_id: 7,
         data: r#"{"op":"from_the_future"}"#.into(),
     }));
+    let rows = server.app.state.dock.rows;
+    for op in ["resize", "focus_direction"] {
+        assert!(
+            !server.handle_server_event(ServerEvent::ClientDockControl {
+                client_id: 7,
+                data: format!(r#"{{"op":"{op}","direction":"diagonal"}}"#),
+            }),
+            "an unknown {op} direction changes nothing"
+        );
+    }
+    assert_eq!(server.app.state.dock.rows, rows);
     assert_eq!(server.app.state.dock.open().unwrap().panes.len(), 1);
     let _ = DOCK_CONTROL_KIND;
 }
@@ -272,4 +283,37 @@ async fn output_from_a_dock_pane_marks_the_dock_dirty() {
         !server.dock_sources_dirty(&HashSet::from([workspace_pane])),
         "workspace output does not redraw the dock"
     );
+}
+
+#[tokio::test]
+async fn full_renders_redraw_the_dock_only_after_it_changed() {
+    let mut server = test_headless_server();
+    install_focused_test_runtime(&mut server, b"");
+    let (runtime, _input) = test_runtime(b"");
+    let ids = server.app.install_test_dock(vec![("usage", runtime)]);
+    let (control_rx, _render_rx) = connect_shell(&mut server, 7);
+    send(&mut server, 7, DockControl::Width { cols: 60 });
+    assert!(
+        !dock_surfaces(&control_rx).is_empty(),
+        "opting in draws the dock"
+    );
+    assert!(!server.app.state.dock.needs_redraw);
+
+    server.render_and_stream();
+    assert!(
+        !server.app.state.dock.needs_redraw && dock_surfaces(&control_rx).is_empty(),
+        "an unrelated full render leaves the dock alone"
+    );
+
+    server
+        .app
+        .handle_internal_event(crate::events::AppEvent::PaneDied {
+            pane_id: ids[0],
+            exit_reason: crate::platform::ChildExitReason::Exited,
+        });
+    assert!(server.app.state.dock.needs_redraw, "an exit marks the dock");
+    server.render_and_stream();
+    let surface = dock_surfaces(&control_rx).pop().expect("the exit is drawn");
+    assert!(surface.panes[0].restarting_in_ms.is_some());
+    assert!(!server.app.state.dock.needs_redraw);
 }

@@ -92,6 +92,11 @@ fn join_tilde_rest(home: PathBuf, rest: &str, is_windows: bool) -> PathBuf {
     }
 }
 
+/// The user's home directory from the environment, as tilde expansion uses it.
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    home_dir_from_env(cfg!(windows), |key| std::env::var_os(key)).ok()
+}
+
 fn home_dir_from_env(
     is_windows: bool,
     env: impl Fn(&str) -> Option<OsString>,

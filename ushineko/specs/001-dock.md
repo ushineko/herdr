@@ -411,6 +411,11 @@ design assumed.
 - Agent detection and notifications for dock programs.
 - Moving panes between the dock and a workspace.
 - Opening dock panes from the CLI or the API.
+- Dock panes in the JSON API. `pane list`, `pane read`, `pane process-info`
+  and `pane run` do not see dock panes. Seeded programs need no outside help,
+  since herdr restarts them, but a program started by hand in a dock split is
+  not restored by herdr-resurrect. Deferred (2026-11-19) to the
+  herdr-resurrect port, where the need is concrete.
 - Dock positions other than bottom.
 - Locking the dock height. Height stays adjustable by drag and resize mode. A
   config-time lock would make the dock harder to expand for other uses, and a
@@ -482,9 +487,49 @@ layout. Step 8 replaces them with one dock process.
 Verification at `af24f9de`: `just lint` (fmt and clippy `-D warnings`) clean;
 nextest **4116 passed**, 0 failed, including 57 dock tests and the 2 real
 server-and-client integration tests in `tests/dock.rs`; the config-reference,
-docs-translation-parity, changelog and UI-hot-path checks OK. Each behavioural
+changelog and UI-hot-path checks OK. Each behavioural
 test was checked to fail with its behaviour removed: 12 mutations, all caught.
 Not run: the `bun` recipes and `just windows-lint` (see `ushineko/MAINTAINING.md`).
+*Correction:* the docs-translation-parity claim above covered only the
+checker's unit tests. The live check (`scripts/docs_translation_parity.py`)
+failed at `af24f9de`, because the translations lacked the local sections; it
+passes since the review fixes below.
+
+### Review fixes (2026-11-19)
+
+An independent review against herdr's `AGENTS.md` raised the following;
+fixed on this branch unless stated:
+
+- The full render redrew the dock on every pass. It now redraws only when
+  `Dock::needs_redraw` is set (layout changes, spawns, exits, a restart
+  countdown, palette changes); pty output keeps its own path. Test:
+  `full_renders_redraw_the_dock_only_after_it_changed`.
+- `DockDirection` has an `Unknown` serde fallback, ignored by the server.
+- Client dock focus is released when the dock goes away, instead of in
+  composition. Test: `a_dock_that_closes_gives_the_keyboard_back_without_a_redraw`.
+- No `expect()` in seed building or dock key handling; the home directory
+  comes from `worktree::home_dir()`.
+- Japanese and Simplified Chinese configuration pages gained the dock and
+  spaces-bar sections.
+- Dock panes in the JSON API: deferred (see "Deliberately not supported").
+
+Narrowed validation, and why it is safe: the `bun` recipes test upstream's
+TypeScript workers and website tooling, which no dock commit touches
+(`git diff --stat v0.9.5 ushineko/dock` shows Rust, the config reference and
+the configuration docs only). `just windows-lint` cross-compiles clippy for
+Windows and needs `xwin`; the fork's GitHub CI runs the native Windows check
+and ConPTY packaging on every pull request instead.
+
+Re-verified after the fixes: `just lint` clean; nextest **4118 passed**;
+three new mutations (no redraw flag on change, no focus release, no serde
+fallback), each caught. `just bench-render-scale` against `ushineko/spaces-bar`
+(release builds, same machine): server render rows within run-to-run noise
+(the dock branch measured 3–9% faster on dense scenes). The client navigator
+profile is consistently slower: about 430 µs against 405 µs per frame, mean
+of 14 cases over three interleaved runs. That profile has no dock, and every
+dock path in client composition returns early without one, so the cause is
+not dock work per frame. **Open:** profile it before calling the dock
+cost-free on the client.
 
 ### Prod visibility
 
