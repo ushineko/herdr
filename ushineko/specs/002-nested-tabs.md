@@ -81,6 +81,12 @@ Decided with the user on 2026-11-19:
 - **Focusing a hidden pane from outside** (Go To, an agent-list jump, a
   notification click, `herdr pane focus`) first makes it the visible pane of
   its stack.
+- **Geometry commands on a hidden pane** (split, resize, swap, zoom by pane
+  id, from keys or the API) reveal it first, then act on its slot. (Decided
+  2026-11-19.)
+- **Notifications:** a hidden pane counts as not visible, even in the active
+  tab. Its agent's blocked and done states notify as a background tab's would,
+  and are not marked seen until the pane is shown. (Decided 2026-11-19.)
 
 ### Config (proposed)
 
@@ -152,11 +158,11 @@ contain, implementation stops and the user decides.
   background tabs are, so switching does not reflow.
 - A slot shorter than two rows draws no strip and shows only the visible pane.
 - **Render hot path** (`AGENTS.md`): hidden panes still parse output, but
-  their output must not trigger presentation work. Because they are not
-  layout leaves, the hidden-source early exit
-  (`pty_sources_visible_to_any_render_target`, via
-  `any_shell_surface_contains_pane`) should already classify them as hidden;
-  a test pins that. A strip entry's agent glyph changes through the normal
+  their output must not trigger presentation work. The hidden-source early
+  exit (`pty_sources_visible_to_any_render_target`, via
+  `any_shell_surface_contains_pane`) checks `tab.panes`, not the layout
+  (Phase 0), so it would count hidden members as visible. It must check
+  stack visibility, and a test pins that. A strip entry's agent glyph changes through the normal
   agent-state redraw, not through pty output.
 
 ### Protocol (same gate as the dock)
@@ -209,6 +215,43 @@ and 2 back with their cwds, pane 3 not created. Its next save dropped
 hidden pane 3 (with `active: 1`); stock restored it the same way and focused
 pane 1. Rollback therefore loses only the hidden panes, as designed.
 
+**Enumeration audit (2026-11-19)**, full table in
+[`002-phase0-audit.md`](002-phase0-audit.md): 89 classified rows, 30 needing
+change, plus 4 sites handling hidden pane ids. Spot-checked by hand:
+`any_shell_surface_contains_pane`, the strict handoff import and the
+last-pane checks. No site makes the change unsafe to contain; every fix is a
+local substitution or a small stack-aware helper (`is_visible`, `reveal`,
+`replace_pane`, size-hidden-like-visible). By theme:
+
+- **A. "Last pane" uses the leaf count (critical).** `Workspace::remove_pane`
+  (`src/workspace.rs`), `Tab::detach_pane` (`src/workspace/tab.rs`) and close
+  actions (`src/app/actions.rs`) test `layout.pane_count() <= 1`. In a
+  one-slot stack, closing, moving or the death of any member would remove the
+  tab, or the whole workspace, and leave the other members' processes running
+  with no pane. Fix: "last pane" means `tab.panes.len()`, and removing the
+  visible member hands its leaf to the next member (`replace_pane`).
+- **B. Lists built from the layout:** the session snapshot that feeds the
+  client's Go To and notification activation, `agent list`, agent lookup by
+  name, `pane list` and the sidebar agent rows would all omit hidden panes.
+- **C. Lifecycle tied to geometry:** deferred agent resume, worktree-removal
+  shutdown, plugin-record cleanup, and spawning and restoring dock members.
+- **D. Persistence and handoff:** restore and the handoff import walk the
+  tree only. The import fails if any imported runtime is left unused, so
+  until restore learns stacks every handoff would fail and roll back. It fails
+  safely: the old server keeps running.
+- **E. Render hot path:** see Geometry and rendering (corrected above).
+- **F. Sizing:** nothing resizes hidden members. They keep a stale size (never
+  zero) and would reflow when shown. Fix in `resize_tab_panes` and
+  `compute_pane_infos_for_tab`.
+- **G. Focus and visibility semantics:** focusing a hidden pane by API does
+  nothing but reports success; geometry API calls on a hidden pane return
+  "pane not found"; hidden members of the active tab are treated as seen,
+  which suppresses their notifications. Decisions are listed under Open
+  decisions.
+
+Unverified: whether stock herdr keeps saved scrollback after a rollback (the
+history fingerprint may no longer match).
+
 ### Live handoff
 
 Handoff transfers runtimes listed by the workspace snapshot. Hidden panes are
@@ -218,17 +261,24 @@ in the audit.
 ## Acceptance Criteria
 
 ### Phase 0 — audit and compatibility
-- [ ] Every non-test site that enumerates `layout.pane_ids()`,
+- [x] Every non-test site that enumerates `layout.pane_ids()`,
       `layout.pane_count()` or `Tab::panes` is classified as visible-only or
       all-panes in this spec, with file references, and every site where a
       hidden pane would misbehave is listed with its fix.
-- [ ] Characterization tests for the protected behaviour (close-tab, session
+      ([`002-phase0-audit.md`](002-phase0-audit.md); summary under Phase 0
+      findings.)
+- [x] Characterization tests for the protected behaviour (close-tab, session
       save and restore, handoff transfer, directional focus, agent lists) are
-      named or added before code moves.
+      named or added before code moves. (Named in the audit, section 6. None
+      covers a tab with more panes than layout leaves; those are new tests,
+      written first in implementation.)
 - [x] A test shows that stock v0.9.5 restores a session containing stacks
       (the visible panes, no error), as for the dock. (Phase 0 findings.)
-- [ ] Live handoff carries hidden panes, or the gap is recorded with a
-      decision.
+- [x] Live handoff carries hidden panes, or the gap is recorded with a
+      decision. Export already sends hidden runtimes; the import must learn
+      stacks (implementation criterion below). Handoff *to stock* herdr fails
+      safely while stacks exist; decided 2026-11-19: rollback to stock is a
+      cold restart, documented.
 - [ ] The audit has an independent review before implementation starts.
 
 ### Model and lifecycle
@@ -244,7 +294,13 @@ in the audit.
 - [ ] Focusing a hidden pane from Go To, an agent-list jump, a notification
       or `herdr pane focus` makes it visible first.
 - [ ] Hidden panes appear in agent lists, Go To and notifications, like any
-      pane.
+      pane, and their notifications fire even when their tab is active.
+- [ ] Geometry commands on a hidden pane reveal it, then act on its slot.
+- [ ] Closing, moving or the exit of any member of a one-slot stack removes
+      only that pane; the tab and workspace stay (audit theme A, tested for
+      each close, move and death path).
+- [ ] Live handoff between two patched builds carries stacks: same members,
+      visible pane and processes (integration test).
 - [ ] The workspace and app invariant checks are extended for stacks, and
       pass in every existing test, the new ones, and against the adversarial
       identity fixtures extended with stacks.
@@ -335,7 +391,10 @@ in the audit.
   renderer. Each upstream release will cost more to port than the spaces bar
   or the dock. It is a separate series so it can be dropped.
 - **Rollback:** the side-field design means rollback loses the hidden panes
-  (their processes end) but keeps the session. Same pattern as the dock.
+  (their processes end) but keeps the session. Same pattern as the dock. A
+  live handoff to stock herdr fails safely while any stack exists (stock's
+  import rejects unused runtimes), so rollback to stock is a cold restart:
+  `herdr server stop`, swap the binary, start. Decided 2026-11-19.
 - **Stock clients** see the strip but cannot click it, and their keymaps lack
   the new actions. Accepted.
 - **Assumption:** the panel use case is served by creating stacked panes by
