@@ -1658,6 +1658,79 @@ mod app_tests {
     }
 
     #[tokio::test]
+    async fn agents_in_dock_panes_raise_no_list_entries_or_notifications() {
+        let mut app = test_app();
+        app.ensure_default_workspace();
+        app.init_dock(&seed(&[("usage", "sleep 5", 1)]), None);
+        let usage = seeded_pane(&app, "usage");
+        assert!(app.dock_split(usage, Direction::Vertical));
+        let user = *app
+            .state
+            .dock
+            .open()
+            .unwrap()
+            .panes
+            .iter()
+            .find(|(_, pane)| pane.origin == DockPaneOrigin::User)
+            .unwrap()
+            .0;
+        let now = Instant::now();
+        app.handle_internal_event(crate::events::AppEvent::AgentProcessDetected {
+            pane_id: user,
+            agent: crate::detect::Agent::Claude,
+            observed_at: now,
+        });
+        app.handle_internal_event(crate::events::AppEvent::StateChanged {
+            pane_id: user,
+            agent: Some(crate::detect::Agent::Claude),
+            state: crate::detect::AgentState::Blocked,
+            visible_blocker: true,
+            visible_working: false,
+            process_exited: false,
+            observed_at: now,
+        });
+
+        let response = app.handle_api_request(crate::api::schema::Request {
+            id: "dock-agents".into(),
+            method: crate::api::schema::Method::AgentList(Default::default()),
+        });
+        let parsed: crate::api::schema::SuccessResponse = serde_json::from_str(&response).unwrap();
+        let crate::api::schema::ResponseResult::AgentList { agents } = parsed.result else {
+            panic!("expected an agent list: {response}");
+        };
+        assert!(
+            agents.is_empty(),
+            "a dock pane is not listed as an agent: {agents:?}"
+        );
+        assert!(app.state.toast.is_none(), "no toast for a dock pane");
+        assert!(
+            app.state
+                .next_pending_agent_notification_deadline()
+                .is_none(),
+            "no notification is queued for a dock pane"
+        );
+
+        // Positive control: the same event on a workspace pane is listed, so
+        // the empty list above is the dock's doing, not the test's.
+        let workspace_pane = app.state.workspaces[0].tabs[0].root_pane;
+        app.handle_internal_event(crate::events::AppEvent::AgentProcessDetected {
+            pane_id: workspace_pane,
+            agent: crate::detect::Agent::Claude,
+            observed_at: now,
+        });
+        let response = app.handle_api_request(crate::api::schema::Request {
+            id: "workspace-agents".into(),
+            method: crate::api::schema::Method::AgentList(Default::default()),
+        });
+        let parsed: crate::api::schema::SuccessResponse = serde_json::from_str(&response).unwrap();
+        let crate::api::schema::ResponseResult::AgentList { agents } = parsed.result else {
+            panic!("expected an agent list: {response}");
+        };
+        assert_eq!(agents.len(), 1, "a workspace pane agent is listed");
+        shut_down(&mut app);
+    }
+
+    #[tokio::test]
     async fn session_saves_carry_the_dock() {
         let mut app = test_app();
         app.ensure_default_workspace();
