@@ -1374,6 +1374,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn directional_focus_moves_between_dock_panes_and_stops_at_the_edges() {
+        let (mut dock, spawns) = seeded_dock(&[("a", "x", 1), ("b", "y", 1)]);
+        let (left, right) = (spawns[0].pane_id, spawns[1].pane_id);
+        assert_eq!(dock.open().unwrap().layout.focused(), left);
+        assert!(
+            !dock.focus_direction(NavDirection::Left),
+            "nothing left of the first pane"
+        );
+        assert!(
+            !dock.focus_direction(NavDirection::Up),
+            "the dock's top edge stops focus"
+        );
+        assert!(dock.focus_direction(NavDirection::Right));
+        assert_eq!(dock.open().unwrap().layout.focused(), right);
+        assert!(!dock.focus_direction(NavDirection::Right));
+    }
+
+    #[test]
+    fn resize_mode_left_and_right_move_the_divider() {
+        let (mut dock, _) = seeded_dock(&[("a", "x", 1), ("b", "y", 1)]);
+        let width = |dock: &Dock| {
+            dock.geometry()
+                .iter()
+                .find(|pane| pane.focused)
+                .map(|pane| pane.rect.width)
+                .unwrap()
+        };
+        let before = width(&dock);
+        assert!(dock.resize_focused(NavDirection::Right, 0.1));
+        assert!(width(&dock) > before, "the focused pane grows to the right");
+        assert!(dock.resize_focused(NavDirection::Left, 0.2));
+        assert!(width(&dock) < before);
+    }
+
+    #[test]
     fn client_supplied_sizes_are_clamped() {
         let mut dock = Dock::default();
         dock.set_rows(u16::MAX);
@@ -1727,6 +1762,23 @@ mod app_tests {
             panic!("expected an agent list: {response}");
         };
         assert_eq!(agents.len(), 1, "a workspace pane agent is listed");
+        shut_down(&mut app);
+    }
+
+    #[tokio::test]
+    async fn a_split_starts_in_the_source_panes_directory() {
+        let mut app = test_app();
+        app.init_dock(&seed(&[("usage", "sleep 5", 1)]), None);
+        let usage = seeded_pane(&app, "usage");
+        assert!(app.dock_split(usage, Direction::Horizontal));
+        let dock = app.state.dock.open().unwrap();
+        let user = dock
+            .panes
+            .values()
+            .find(|pane| pane.origin == DockPaneOrigin::User)
+            .unwrap();
+        let tmp = std::fs::canonicalize("/tmp").unwrap();
+        assert_eq!(std::fs::canonicalize(&user.cwd).unwrap(), tmp);
         shut_down(&mut app);
     }
 

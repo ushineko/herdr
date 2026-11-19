@@ -459,3 +459,108 @@ fn acting_on_the_dock_claims_its_width_first() {
         "so does any dock operation while the width is someone else's"
     );
 }
+
+#[test]
+fn the_rule_is_accented_while_the_dock_has_focus() {
+    let mut state = docked_state();
+    let rule = usize::from(ROWS - 4) * usize::from(COLS);
+    let frame = state.compose(COLS, ROWS).expect("frame");
+    assert_eq!(
+        frame.cells[rule].fg,
+        crate::protocol::color_to_u32(state.config.palette.overlay0)
+    );
+    prefixed(&mut state, KeyCode::Char('u'), KeyModifiers::empty());
+    let frame = state.compose(COLS, ROWS).expect("frame");
+    assert_eq!(
+        frame.cells[rule].fg,
+        crate::protocol::color_to_u32(state.config.palette.accent)
+    );
+}
+
+#[test]
+fn mouse_input_is_forwarded_by_the_pane_rules() {
+    let mut surface = two_pane_surface();
+    surface.panes[1].mouse_reporting = true;
+    let mut state = docked_state();
+    let local = super::super::ClientEndpointId::Local;
+    state.set_endpoint_dock_surface(&local, surface);
+    state.compose(COLS, ROWS).expect("frame");
+    let row = ROWS - 2;
+    let is_mouse = |control: &DockControl, wanted: crate::protocol::ClientMouseKind| {
+        matches!(control, DockControl::Input { events, .. }
+            if matches!(events[..], [ClientPaneInputEvent::Mouse { kind, .. }] if kind == wanted))
+    };
+
+    let plain = mouse(&mut state, MouseEventKind::Down(MouseButton::Left), 10, row);
+    assert!(
+        !dock_controls(&plain)
+            .iter()
+            .any(|c| matches!(c, DockControl::Input { .. })),
+        "a click on a program without mouse reporting only focuses"
+    );
+    mouse(&mut state, MouseEventKind::Up(MouseButton::Left), 10, row);
+
+    let wheel = mouse(&mut state, MouseEventKind::ScrollUp, 10, row);
+    assert!(
+        dock_controls(&wheel)
+            .iter()
+            .any(|c| is_mouse(c, crate::protocol::ClientMouseKind::ScrollUp)),
+        "the wheel always goes to the server, which scrolls back or forwards it"
+    );
+
+    let click = mouse(&mut state, MouseEventKind::Down(MouseButton::Left), 60, row);
+    assert!(dock_controls(&click).iter().any(|c| is_mouse(
+        c,
+        crate::protocol::ClientMouseKind::Down(crate::protocol::ClientMouseButton::Left)
+    )));
+    let up = mouse(&mut state, MouseEventKind::Up(MouseButton::Left), 61, row);
+    assert!(
+        dock_controls(&up).iter().any(|c| is_mouse(
+            c,
+            crate::protocol::ClientMouseKind::Up(crate::protocol::ClientMouseButton::Left)
+        )),
+        "the release follows the forwarded press"
+    );
+}
+
+#[test]
+fn the_active_machine_decides_which_dock_is_shown() {
+    let mut state = docked_state();
+    let profile = SavedSshEndpoint {
+        id: crate::client::endpoint::ProfileId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+        label: "Build".into(),
+        target: "dev@build.example".into(),
+        session: "agents".into(),
+        enabled: true,
+    };
+    let remote = super::super::ClientEndpointId::Ssh(profile.id.clone());
+    state.set_endpoint_catalog(&[profile]);
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Online);
+    let mut remote_snapshot = snapshot();
+    remote_snapshot.boot_id = "remote-boot".into();
+    state.set_endpoint_snapshot(&remote, Box::new(remote_snapshot));
+    let mut remote_dock = two_pane_surface();
+    remote_dock.boot_id = "remote-boot".into();
+    remote_dock.rows = 5;
+
+    assert!(
+        !state.set_endpoint_dock_surface(&remote, remote_dock.clone()),
+        "a machine without the capability hands over no dock"
+    );
+    state.set_endpoint_dock_supported(&remote, true);
+    assert!(state.set_endpoint_dock_surface(&remote, remote_dock));
+    assert_eq!(
+        state.active_dock_surface().map(|dock| dock.rows),
+        Some(3),
+        "Local is active"
+    );
+
+    assert!(state.activate_endpoint_projection(&remote));
+    assert_eq!(
+        state.active_dock_surface().map(|dock| dock.rows),
+        Some(5),
+        "switching machines shows that machine's dock"
+    );
+    state.set_endpoint_dock_supported(&remote, false);
+    assert!(state.active_dock_surface().is_none());
+}
