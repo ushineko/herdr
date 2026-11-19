@@ -536,7 +536,7 @@ fn pane_stack_strips(
                     pane_id: app.public_pane_id(ws_idx, entry.pane_id)?,
                     x: entry.x,
                     width: entry.width,
-                    label: entry.label.trim().to_string(),
+                    label: entry.label,
                 })
             })
             .collect();

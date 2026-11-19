@@ -24,7 +24,7 @@ pub(super) struct StackStripHit {
 }
 
 impl ClientShellState {
-    fn active_endpoint_offers_pane_stacks(&self) -> bool {
+    pub(super) fn active_endpoint_offers_pane_stacks(&self) -> bool {
         self.endpoints.iter().any(|endpoint| {
             endpoint.endpoint_id == self.active_endpoint_id && endpoint.pane_stacks_supported
         })
@@ -58,7 +58,11 @@ impl ClientShellState {
             .unwrap_or_default()
     }
 
-    fn push_pane_stack_control(&self, control: PaneStackControl, outcome: &mut ClientShellInput) {
+    pub(super) fn push_pane_stack_control(
+        &self,
+        control: PaneStackControl,
+        outcome: &mut ClientShellInput,
+    ) {
         if !self.active_endpoint_offers_pane_stacks() {
             return;
         }

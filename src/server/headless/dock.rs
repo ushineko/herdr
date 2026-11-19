@@ -229,47 +229,41 @@ impl HeadlessServer {
         visible: crate::layout::PaneId,
         strip: Rect,
     ) -> crate::protocol::endpoint::PaneStackStrip {
-        let palette = &self.app.state.palette;
-        let base = Style::default().fg(palette.overlay0);
-        for x in strip.x..strip.right() {
-            buffer[(x, strip.y)].set_symbol(" ").set_style(base);
-        }
-        let mut members = Vec::new();
-        if let Some(stack) = crate::workspace::stack::stack_of(&layout.stacks, visible) {
-            let share = (strip.width / (stack.panes.len() as u16).max(1)).max(4);
-            let mut x = strip.x;
-            for pane_id in &stack.panes {
-                if x >= strip.right() {
-                    break;
-                }
-                let width = share.min(strip.right() - x);
-                let label = layout
+        let labels = crate::workspace::stack::stack_of(&layout.stacks, visible)
+            .map(|stack| {
+                stack
                     .panes
-                    .get(pane_id)
-                    .and_then(|pane| pane.label())
-                    .map(|label| crate::ui::strip_label_text(label).to_owned())
-                    .unwrap_or_else(|| "shell".to_owned());
-                let text = format!(
-                    " {} ",
-                    crate::ui::truncate_end(&label, usize::from(width.saturating_sub(2)))
-                );
-                let style = if *pane_id == visible {
-                    Style::default().fg(palette.text).add_modifier(
-                        ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED,
-                    )
-                } else {
-                    base
-                };
-                buffer.set_stringn(x, strip.y, &text, usize::from(width), style);
-                members.push(crate::protocol::endpoint::PaneStackMember {
-                    pane_id: crate::app::dock::dock_pane_public_id(*pane_id),
-                    x,
-                    width,
-                    label,
-                });
-                x += width;
-            }
-        }
+                    .iter()
+                    .map(|pane_id| {
+                        let label = layout
+                            .panes
+                            .get(pane_id)
+                            .and_then(|pane| pane.label())
+                            .map(|label| crate::ui::strip_label_text(label).to_owned())
+                            .unwrap_or_else(|| "shell".to_owned());
+                        (*pane_id, label)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let entries = crate::ui::layout_entries(labels, strip);
+        crate::ui::draw_strip(
+            buffer,
+            strip,
+            &entries,
+            visible,
+            layout.layout.focused() == visible,
+            &self.app.state.palette,
+        );
+        let members = entries
+            .into_iter()
+            .map(|entry| crate::protocol::endpoint::PaneStackMember {
+                pane_id: crate::app::dock::dock_pane_public_id(entry.pane_id),
+                x: entry.x,
+                width: entry.width,
+                label: entry.label,
+            })
+            .collect();
         crate::protocol::endpoint::PaneStackStrip {
             strip: strip.into(),
             visible: crate::app::dock::dock_pane_public_id(visible),

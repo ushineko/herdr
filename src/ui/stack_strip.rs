@@ -93,8 +93,48 @@ fn member_label(app: &AppState, tab: &Tab, pane_id: PaneId, hidden: bool) -> Str
     }
 }
 
-/// Lay out a stack's strip entries left to right in `strip`. Labels are cut to
-/// share the width; entries that do not fit are dropped from the right.
+/// Lay out entries for these labels in `strip`, the way the tab bar sizes its
+/// tabs: label plus padding (at least `MIN_ENTRY_WIDTH`), one column between
+/// entries. When they do not fit, the width is shared equally instead.
+pub(crate) fn layout_entries(labels: Vec<(PaneId, String)>, strip: Rect) -> Vec<StripEntry> {
+    const MIN_ENTRY_WIDTH: u16 = 8;
+    const MIN_SHARED_WIDTH: u16 = 4;
+    let count = labels.len() as u16;
+    if count == 0 {
+        return Vec::new();
+    }
+    let gaps = count - 1;
+    let desired: Vec<u16> = labels
+        .iter()
+        .map(|(_, label)| {
+            (crate::ui::display_width(label) as u16)
+                .saturating_add(4)
+                .max(MIN_ENTRY_WIDTH)
+        })
+        .collect();
+    let total = desired
+        .iter()
+        .fold(gaps, |sum, width| sum.saturating_add(*width));
+    let shared = (strip.width.saturating_sub(gaps) / count).max(MIN_SHARED_WIDTH);
+    let mut entries = Vec::new();
+    let mut x = strip.x;
+    for ((pane_id, label), want) in labels.into_iter().zip(desired) {
+        if x >= strip.right() {
+            break;
+        }
+        let width = if total <= strip.width { want } else { shared }.min(strip.right() - x);
+        entries.push(StripEntry {
+            pane_id,
+            x,
+            width,
+            label,
+        });
+        x = x.saturating_add(width + 1);
+    }
+    entries
+}
+
+/// A workspace stack's strip entries.
 pub(crate) fn strip_entries(
     app: &AppState,
     tab: &Tab,
@@ -104,29 +144,59 @@ pub(crate) fn strip_entries(
     let Some(stack) = tab.stack_of(visible) else {
         return Vec::new();
     };
-    let count = stack.panes.len() as u16;
-    let share = (strip.width / count.max(1)).max(4);
-    let mut entries = Vec::new();
-    let mut x = strip.x;
-    for pane_id in &stack.panes {
-        if x >= strip.right() {
-            break;
-        }
-        let width = share.min(strip.right() - x);
-        let label = member_label(app, tab, *pane_id, *pane_id != visible);
-        let text = format!(
-            " {} ",
-            crate::ui::truncate_end(&label, usize::from(width.saturating_sub(2)))
-        );
-        entries.push(StripEntry {
-            pane_id: *pane_id,
-            x,
-            width,
-            label: text,
-        });
-        x += width;
+    let labels = stack
+        .panes
+        .iter()
+        .map(|pane_id| {
+            (
+                *pane_id,
+                member_label(app, tab, *pane_id, *pane_id != visible),
+            )
+        })
+        .collect();
+    layout_entries(labels, strip)
+}
+
+/// Draw a strip in the tab bar's style: the row on `panel_bg`, entries on
+/// `surface0`, the shown member on the accent colour while its slot has focus
+/// (a raised `surface1` otherwise), labels centred.
+pub(crate) fn draw_strip(
+    buffer: &mut ratatui::buffer::Buffer,
+    strip: Rect,
+    entries: &[StripEntry],
+    visible: PaneId,
+    slot_focused: bool,
+    palette: &crate::app::state::Palette,
+) {
+    buffer.set_style(strip, Style::default().bg(palette.panel_bg));
+    for x in strip.x..strip.right() {
+        buffer[(x, strip.y)].set_symbol(" ");
     }
-    entries
+    for entry in entries {
+        let style = if entry.pane_id == visible && slot_focused {
+            Style::default()
+                .fg(super::widgets::panel_contrast_fg(palette))
+                .bg(palette.accent)
+                .add_modifier(Modifier::BOLD)
+        } else if entry.pane_id == visible {
+            Style::default()
+                .fg(palette.text)
+                .bg(palette.surface1)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(palette.overlay1).bg(palette.surface0)
+        };
+        let width = usize::from(entry.width);
+        let label = crate::ui::truncate_end(&entry.label, width.saturating_sub(2));
+        let padding = width.saturating_sub(crate::ui::display_width(&label));
+        let left = padding / 2;
+        let text = format!(
+            "{empty:left$}{label}{empty:right$}",
+            empty = "",
+            right = padding - left
+        );
+        buffer.set_stringn(entry.x, strip.y, &text, width, style);
+    }
 }
 
 /// Draw the strips of every stack among `pane_infos` (the drawn panes).
@@ -142,38 +212,80 @@ pub(super) fn render_stack_strips(
         let (Some(strip), _) = strip_and_content(tab, info.id, pane_inner) else {
             continue;
         };
-        let palette = &app.palette;
-        let buffer = frame.buffer_mut();
-        let base = Style::default().fg(palette.overlay0);
-        for x in strip.x..strip.right() {
-            buffer[(x, strip.y)].set_symbol(" ").set_style(base);
-        }
-        for entry in strip_entries(app, tab, info.id, strip) {
-            let style = if entry.pane_id == info.id {
-                let color = if info.id == focused {
-                    palette.accent
-                } else {
-                    palette.text
-                };
-                Style::default()
-                    .fg(color)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-            } else {
-                base
-            };
-            buffer.set_stringn(
-                entry.x,
-                strip.y,
-                &entry.label,
-                usize::from(entry.width),
-                style,
-            );
-        }
+        let entries = strip_entries(app, tab, info.id, strip);
+        draw_strip(
+            frame.buffer_mut(),
+            strip,
+            &entries,
+            info.id,
+            info.id == focused,
+            &app.palette,
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_strip_is_drawn_in_the_tab_bar_style() {
+        let palette = crate::app::state::Palette::tokyo_night();
+        let strip = Rect::new(0, 0, 60, 1);
+        let (yazi, lazygit) = (PaneId::alloc(), PaneId::alloc());
+        let entries = layout_entries(
+            vec![(yazi, "yazi".into()), (lazygit, "lazygit".into())],
+            strip,
+        );
+        assert_eq!(
+            (entries[0].x, entries[0].width),
+            (0, 8),
+            "label + padding, min 8"
+        );
+        assert_eq!(
+            (entries[1].x, entries[1].width),
+            (9, 11),
+            "one column between tabs"
+        );
+
+        let mut buffer = ratatui::buffer::Buffer::empty(strip);
+        draw_strip(&mut buffer, strip, &entries, yazi, true, &palette);
+        assert_eq!(
+            buffer[(0, 0)].bg,
+            palette.accent,
+            "the shown tab on the accent"
+        );
+        assert_eq!(buffer[(9, 0)].bg, palette.surface0, "others on surface0");
+        assert_eq!(
+            buffer[(8, 0)].bg,
+            palette.panel_bg,
+            "gaps on the bar background"
+        );
+        assert_eq!(buffer[(59, 0)].bg, palette.panel_bg);
+        let row: String = (0..60)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect();
+        assert!(row.starts_with("  yazi  "), "centred: {row:?}");
+
+        draw_strip(&mut buffer, strip, &entries, yazi, false, &palette);
+        assert_eq!(
+            buffer[(0, 0)].bg,
+            palette.surface1,
+            "an unfocused slot's tab is quieter"
+        );
+
+        let narrow = layout_entries(
+            vec![
+                (yazi, "a-long-label".into()),
+                (lazygit, "another-long-label".into()),
+            ],
+            Rect::new(0, 0, 21, 1),
+        );
+        assert_eq!(
+            narrow.iter().map(|e| e.width).collect::<Vec<_>>(),
+            vec![10, 10],
+            "shared when tight"
+        );
+    }
 
     #[test]
     fn namespaced_labels_show_their_last_part() {

@@ -643,3 +643,35 @@ fn a_click_on_a_dock_strip_shows_that_member() {
         forward: false
     }));
 }
+
+#[test]
+fn the_dock_menu_offers_a_new_nested_tab_when_the_server_has_them() {
+    let mut state = docked_state();
+    state.set_endpoint_pane_stacks_supported(&super::super::ClientEndpointId::Local, true);
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Right),
+        10,
+        ROWS - 2,
+    );
+    let Some(ClientShellOverlay::ContextMenu(menu)) = state.overlay.as_ref() else {
+        panic!("right-click opens the dock menu");
+    };
+    let labels = menu
+        .items()
+        .iter()
+        .map(|item| item.label.to_string())
+        .collect::<Vec<_>>();
+    let index = labels
+        .iter()
+        .position(|label| label == "New nested tab")
+        .expect("offered in the dock menu");
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(index, &mut outcome);
+    assert_eq!(
+        dock_controls(&outcome),
+        vec![DockControl::StackNew {
+            pane_id: "dock_1".into()
+        }]
+    );
+}

@@ -492,7 +492,10 @@ impl ClientShellState {
 
     fn open_dock_context_menu(&mut self, pane_id: String, x: u16, y: u16) {
         self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
-            target: ClientContextMenuTarget::DockPane { pane_id },
+            target: ClientContextMenuTarget::DockPane {
+                pane_id,
+                nested_tabs: self.active_endpoint_offers_pane_stacks(),
+            },
             x,
             y,
             highlighted: 0,
@@ -516,6 +519,7 @@ impl ClientShellState {
             },
             ClientContextMenuAction::ClosePane => DockControl::Close { pane_id },
             ClientContextMenuAction::ResetDock => DockControl::Reset,
+            ClientContextMenuAction::NewNestedTab => DockControl::StackNew { pane_id },
             _ => return,
         };
         self.push_dock_control(control, outcome);

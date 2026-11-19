@@ -55,12 +55,20 @@ impl ClientContextMenuOverlay {
                     Action::ToggleGroup,
                 ),
             ],
-            ClientContextMenuTarget::DockPane { .. } => vec![
-                item("Split right", Action::SplitRight),
-                item("Split down", Action::SplitDown),
-                item("Close pane", Action::ClosePane),
-                item("Reset dock to config", Action::ResetDock),
-            ],
+            ClientContextMenuTarget::DockPane { nested_tabs, .. } => {
+                let mut items = vec![
+                    item("Split right", Action::SplitRight),
+                    item("Split down", Action::SplitDown),
+                ];
+                if *nested_tabs {
+                    items.push(item("New nested tab", Action::NewNestedTab));
+                }
+                items.extend([
+                    item("Close pane", Action::ClosePane),
+                    item("Reset dock to config", Action::ResetDock),
+                ]);
+                items
+            }
             ClientContextMenuTarget::Tab { .. } => vec![
                 item("New tab", Action::NewTab),
                 item("Rename", Action::Rename),
@@ -70,6 +78,7 @@ impl ClientContextMenuOverlay {
                 source_pane_id,
                 has_manual_label,
                 right_click_passthrough,
+                nested_tabs,
                 ..
             } => {
                 let mut items = vec![item("Rename pane", Action::RenamePane)];
@@ -82,6 +91,11 @@ impl ClientContextMenuOverlay {
                 items.extend([
                     item("Split right", Action::SplitRight),
                     item("Split down", Action::SplitDown),
+                ]);
+                if *nested_tabs {
+                    items.push(item("New nested tab", Action::NewNestedTab));
+                }
+                items.extend([
                     item("Zoom", Action::Zoom),
                     item(
                         if *right_click_passthrough {
@@ -212,6 +226,7 @@ impl ClientShellState {
                 source_pane_id,
                 has_manual_label: pane.label.is_some(),
                 right_click_passthrough: pane.right_click_passthrough,
+                nested_tabs: self.active_endpoint_offers_pane_stacks(),
             },
             x,
             y,
@@ -263,7 +278,7 @@ impl ClientShellState {
                     );
                 }
             }
-            ClientContextMenuTarget::DockPane { pane_id } => {
+            ClientContextMenuTarget::DockPane { pane_id, .. } => {
                 self.activate_dock_context_action(pane_id, action, outcome)
             }
             ClientContextMenuTarget::Pane {
@@ -513,6 +528,12 @@ impl ClientShellState {
                 outcome,
             ),
             ClientContextMenuAction::ClosePane => self.request_pane_close(pane_id, outcome),
+            ClientContextMenuAction::NewNestedTab => self.push_pane_stack_control(
+                crate::protocol::endpoint::PaneStackControl::New {
+                    pane_id: Some(pane_id),
+                },
+                outcome,
+            ),
             _ => {}
         }
     }

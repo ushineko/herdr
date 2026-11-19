@@ -201,3 +201,39 @@ fn pane_cycling_skips_hidden_members() {
     };
     assert_eq!(focused, vec!["pane_3".to_string()], "pane_2 is hidden");
 }
+
+fn menu_labels(state: &ClientShellState) -> Vec<String> {
+    let Some(ClientShellOverlay::ContextMenu(menu)) = state.overlay.as_ref() else {
+        panic!("a context menu is open");
+    };
+    menu.items().iter().map(|item| item.label.clone()).collect()
+}
+
+#[test]
+fn the_pane_menu_offers_a_new_nested_tab_when_the_server_has_them() {
+    let mut state = stacked_state(true);
+    state.open_pane_context_menu("pane_3".into(), 10, 10);
+    let labels = menu_labels(&state);
+    let index = labels
+        .iter()
+        .position(|label| label == "New nested tab")
+        .expect("offered after the splits");
+    assert_eq!(labels[index - 1], "Split down");
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(index, &mut outcome);
+    assert_eq!(
+        stack_controls(&outcome),
+        vec![PaneStackControl::New {
+            pane_id: Some("pane_3".into())
+        }]
+    );
+
+    let mut stock = stacked_state(false);
+    stock.open_pane_context_menu("pane_3".into(), 10, 10);
+    assert!(
+        !menu_labels(&stock)
+            .iter()
+            .any(|label| label == "New nested tab"),
+        "not offered by a server without nested tabs"
+    );
+}
