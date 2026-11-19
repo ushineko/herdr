@@ -8,6 +8,7 @@ mod io;
 pub mod plugin_registry;
 mod restore;
 mod snapshot;
+mod stack_restore;
 mod writer;
 
 pub use self::io::{clear_history, load, load_history};
@@ -17,7 +18,7 @@ pub(crate) use self::restore::restored_worktree_space_membership;
 pub use self::restore::{handoff_pane_aliases, restore_handoff};
 pub use self::snapshot::{
     capture, capture_history, DirectionSnapshot, DockPaneSnapshot, DockSnapshot, LayoutSnapshot,
-    SessionHistorySnapshot, SessionSnapshot, TabSnapshot, WorkspaceSnapshot,
+    SessionHistorySnapshot, SessionSnapshot, StackSnapshot, TabSnapshot, WorkspaceSnapshot,
 };
 
 /// Local patch: dock layouts use the same layout tree format as tabs.

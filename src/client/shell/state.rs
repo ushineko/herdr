@@ -152,6 +152,8 @@ pub(super) struct ShellHitMap {
     pub(super) dock_rule: Rect,
     pub(super) dock_panes: Vec<super::dock::DockPaneHit>,
     pub(super) dock_splits: Vec<super::dock::DockSplitHit>,
+    /// Local patch (spec 002): pane-stack strip entries.
+    pub(super) stack_strips: Vec<super::stacks::StackStripHit>,
 }
 
 #[derive(Clone)]
@@ -541,6 +543,8 @@ pub(super) enum ClientContextMenuAction {
     ClosePane,
     /// Local patch: rebuild the dock from config.
     ResetDock,
+    /// Local patch (spec 002): a new nested tab in the pane's slot.
+    NewNestedTab,
     /// Focus the agent on the picker row that was chosen.
     FocusAgent,
 }
@@ -565,9 +569,15 @@ pub(super) enum ClientContextMenuTarget {
         source_pane_id: Option<String>,
         has_manual_label: bool,
         right_click_passthrough: bool,
+        /// Local patch (spec 002): the server offers nested tabs.
+        nested_tabs: bool,
     },
     /// Local patch: a dock pane's right-click menu.
-    DockPane { pane_id: String },
+    DockPane {
+        pane_id: String,
+        /// Spec 002: the server offers nested tabs.
+        nested_tabs: bool,
+    },
     /// Agents folded into one space chip on the horizontal bar. Carries its own
     /// rows because, unlike every other kind, its items are computed per open.
     SpaceAgents {

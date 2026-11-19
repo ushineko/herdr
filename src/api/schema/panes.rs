@@ -34,6 +34,28 @@ pub struct PaneSplitParams {
     pub env: HashMap<String, String>,
 }
 
+/// Local patch (spec 002): start a shell as a new nested tab (stack member)
+/// in a pane's slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneStackParams {
+    /// The pane whose slot gets the new member; the focused pane if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_pane_id: Option<String>,
+    /// Working directory; the target pane's if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Label for the new pane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Show the new member (default). When false it is added hidden and the
+    /// slot keeps showing what it showed.
+    #[serde(default = "super::default_true")]
+    pub show: bool,
+    /// Focus the new member (implies `show`).
+    #[serde(default)]
+    pub focus: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneInputSetParams {
     pub pane_id: String,
@@ -481,6 +503,21 @@ pub struct PaneInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll: Option<PaneScrollInfo>,
     pub revision: u64,
+    /// Local patch (spec 002): set for members of a pane stack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<PaneStackInfo>,
+}
+
+/// Local patch (spec 002): a pane's place in its stack.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneStackInfo {
+    /// Identifies the stack while it exists: the public id of its first
+    /// member.
+    pub stack_id: String,
+    /// Position in the strip, from 0.
+    pub index: usize,
+    /// Whether this member is the one shown.
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

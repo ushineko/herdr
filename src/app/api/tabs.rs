@@ -229,7 +229,8 @@ impl App {
         let pane_ids = ws
             .tabs
             .get(tab_idx)
-            .map(|tab| tab.layout.pane_ids())
+            // Local patch (spec 002): hidden stack members too.
+            .map(|tab| tab.all_pane_ids())
             .unwrap_or_default();
 
         if closes_workspace {

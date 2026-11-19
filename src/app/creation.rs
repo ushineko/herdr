@@ -180,7 +180,7 @@ impl App {
             Ok(ws
                 .tabs
                 .iter()
-                .flat_map(|tab| tab.layout.pane_ids().into_iter())
+                .flat_map(|tab| tab.all_pane_ids().into_iter())
                 .filter_map(|pane_id| self.pane_info(ws_idx, pane_id))
                 .collect())
         } else {
@@ -192,7 +192,7 @@ impl App {
                 .flat_map(|(ws_idx, ws)| {
                     ws.tabs
                         .iter()
-                        .flat_map(|tab| tab.layout.pane_ids().into_iter())
+                        .flat_map(|tab| tab.all_pane_ids().into_iter())
                         .filter_map(move |pane_id| self.pane_info(ws_idx, pane_id))
                 })
                 .collect())
@@ -362,6 +362,14 @@ impl App {
             agent_session: terminal_agent_session_info(terminal),
             scroll: None,
             revision: terminal.revision,
+            // Local patch (spec 002).
+            stack: ws.tabs[tab_idx].stack_of(pane_id).and_then(|stack| {
+                Some(crate::api::schema::PaneStackInfo {
+                    stack_id: self.public_pane_id(ws_idx, *stack.panes.first()?)?,
+                    index: stack.panes.iter().position(|id| *id == pane_id)?,
+                    visible: stack.visible() == Some(pane_id),
+                })
+            }),
         })
     }
 

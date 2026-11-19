@@ -472,6 +472,13 @@ pub struct KeysConfig {
     pub toggle_dock: BindingConfig,
     /// Local patch: rebuild the dock from `[ui.dock]`. Unbound by default.
     pub reset_dock: BindingConfig,
+    /// Local patch: start a shell as a new member of the focused pane's
+    /// stack (spec 002). Default: "prefix+t"
+    pub stack_new_pane: BindingConfig,
+    /// Local patch: show the next member of the focused stack. Default: "prefix+period"
+    pub stack_next: BindingConfig,
+    /// Local patch: show the previous member of the focused stack. Default: "prefix+comma"
+    pub stack_previous: BindingConfig,
     /// Experimental: switch between vertical and horizontal sidebar placement.
     /// Default: "prefix+shift+b" — the shift variant of `toggle_sidebar`, which
     /// collapses the sidebar on "prefix+b".
@@ -621,6 +628,12 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     reset_dock: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    stack_new_pane: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stack_next: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stack_previous: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -736,6 +749,9 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(focus_dock);
         apply_field!(toggle_dock);
         apply_field!(reset_dock);
+        apply_field!(stack_new_pane);
+        apply_field!(stack_next);
+        apply_field!(stack_previous);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -845,6 +861,9 @@ impl KeysConfig {
         copy_effective_action_field!(focus_dock, keybinds.focus_dock);
         copy_effective_action_field!(toggle_dock, keybinds.toggle_dock);
         copy_effective_action_field!(reset_dock, keybinds.reset_dock);
+        copy_effective_action_field!(stack_new_pane, keybinds.stack_new_pane);
+        copy_effective_action_field!(stack_next, keybinds.stack_next);
+        copy_effective_action_field!(stack_previous, keybinds.stack_previous);
         copy_user_field!(indexed);
 
         profile
@@ -1225,6 +1244,9 @@ impl Default for KeysConfig {
             focus_dock: BindingConfig::one("prefix+u"),
             toggle_dock: BindingConfig::one("prefix+shift+u"),
             reset_dock: BindingConfig::empty(),
+            stack_new_pane: BindingConfig::one("prefix+t"),
+            stack_next: BindingConfig::one("prefix+period"),
+            stack_previous: BindingConfig::one("prefix+comma"),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),

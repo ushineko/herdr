@@ -196,6 +196,15 @@ pub(crate) fn keybind_help_groups(
                 entry(binding_label(&keybinds.focus_dock), "focus dock"),
                 entry(binding_label(&keybinds.toggle_dock), "show/hide dock"),
                 entry(binding_label(&keybinds.reset_dock), "reset dock to config"),
+                entry(
+                    binding_label(&keybinds.stack_new_pane),
+                    "new pane in this stack",
+                ),
+                entry(binding_label(&keybinds.stack_next), "next pane in stack"),
+                entry(
+                    binding_label(&keybinds.stack_previous),
+                    "previous pane in stack",
+                ),
                 entry(binding_label(&keybinds.focus_pane_left), "focus pane left"),
                 entry(binding_label(&keybinds.focus_pane_down), "focus pane down"),
                 entry(binding_label(&keybinds.focus_pane_up), "focus pane up"),

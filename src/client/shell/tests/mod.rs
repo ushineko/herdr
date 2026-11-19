@@ -201,6 +201,7 @@ fn pane_scroll_result(
                 viewport_rows,
             }),
             revision: 0,
+            stack: None,
         },
     }
 }
@@ -263,4 +264,5 @@ mod link_hover;
 mod mobile;
 mod mouse_selection;
 mod popup_focus_projection;
+mod stacks;
 mod startup_overlays;

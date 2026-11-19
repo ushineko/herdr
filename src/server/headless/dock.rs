@@ -48,7 +48,10 @@ impl HeadlessServer {
 
     /// Whether any of these dirty pty sources is a dock pane.
     pub(super) fn dock_sources_dirty(&self, sources: &HashSet<crate::layout::PaneId>) -> bool {
-        sources.iter().any(|id| self.app.state.dock.contains(*id))
+        // Spec 002: output from a hidden stack member draws nothing.
+        sources
+            .iter()
+            .any(|id| self.app.state.dock.contains(*id) && !self.app.state.dock.is_hidden(*id))
     }
 
     /// Send the current dock to every opted-in client whose last copy differs.
@@ -103,6 +106,7 @@ impl HeadlessServer {
                 panes: Vec::new(),
                 splits: Vec::new(),
                 zoomed: false,
+                stacks: Vec::new(),
             };
         };
         let area = dock.area();
@@ -111,6 +115,7 @@ impl HeadlessServer {
         let mut buffer = ratatui::buffer::Buffer::empty(area);
         let mut cursor = None;
         let mut panes = Vec::new();
+        let mut stacks = Vec::new();
         let now = Instant::now();
         for geometry in dock.geometry() {
             let Some(pane) = layout.panes.get(&geometry.id) else {
@@ -171,6 +176,9 @@ impl HeadlessServer {
                     Style::default().fg(palette.overlay0),
                 );
             }
+            if let Some(strip) = geometry.strip {
+                stacks.push(self.render_dock_strip(&mut buffer, layout, geometry.id, strip));
+            }
             panes.push(DockSurfacePane {
                 pane_id: crate::app::dock::dock_pane_public_id(geometry.id),
                 rect: rect.into(),
@@ -209,6 +217,57 @@ impl HeadlessServer {
             panes,
             splits,
             zoomed: layout.zoomed,
+            stacks,
+        }
+    }
+
+    /// Spec 002: draw a dock stack's strip and describe it for the client.
+    fn render_dock_strip(
+        &self,
+        buffer: &mut ratatui::buffer::Buffer,
+        layout: &crate::app::dock::DockLayout,
+        visible: crate::layout::PaneId,
+        strip: Rect,
+    ) -> crate::protocol::endpoint::PaneStackStrip {
+        let labels = crate::workspace::stack::stack_of(&layout.stacks, visible)
+            .map(|stack| {
+                stack
+                    .panes
+                    .iter()
+                    .map(|pane_id| {
+                        let label = layout
+                            .panes
+                            .get(pane_id)
+                            .and_then(|pane| pane.label())
+                            .map(|label| crate::ui::strip_label_text(label).to_owned())
+                            .unwrap_or_else(|| "shell".to_owned());
+                        (*pane_id, label)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let entries = crate::ui::layout_entries(labels, strip);
+        crate::ui::draw_strip(
+            buffer,
+            strip,
+            &entries,
+            visible,
+            layout.layout.focused() == visible,
+            &self.app.state.palette,
+        );
+        let members = entries
+            .into_iter()
+            .map(|entry| crate::protocol::endpoint::PaneStackMember {
+                pane_id: crate::app::dock::dock_pane_public_id(entry.pane_id),
+                x: entry.x,
+                width: entry.width,
+                label: entry.label,
+            })
+            .collect();
+        crate::protocol::endpoint::PaneStackStrip {
+            strip: strip.into(),
+            visible: crate::app::dock::dock_pane_public_id(visible),
+            members,
         }
     }
 }

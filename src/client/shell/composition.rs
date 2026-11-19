@@ -348,6 +348,17 @@ impl ClientShellState {
             frame.cells[start..start + usize::from(bar.width)].to_vec()
         });
         blit_pane_surface(&mut frame, &surface.frame, layout.pane_surface);
+        self.hits.stack_strips = self.stack_strip_hits(layout.pane_surface);
+        if layout.dock.height >= 2 {
+            let dock_content = Rect::new(
+                layout.dock.x,
+                layout.dock.y + 1,
+                layout.dock.width,
+                layout.dock.height - 1,
+            );
+            let dock_strips = self.dock_stack_strip_hits(dock_content);
+            self.hits.stack_strips.extend(dock_strips);
+        }
         self.blit_dock(&mut frame, layout);
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();

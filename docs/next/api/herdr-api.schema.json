@@ -829,6 +829,17 @@
                 }
               ]
             },
+            "stack": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/event/$defs/PaneStackInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local patch (spec 002): set for members of a pane stack."
+            },
             "state_labels": {
               "additionalProperties": {
                 "type": "string"
@@ -1025,6 +1036,31 @@
             "offset_from_bottom",
             "max_offset_from_bottom",
             "viewport_rows"
+          ],
+          "type": "object"
+        },
+        "PaneStackInfo": {
+          "description": "Local patch (spec 002): a pane's place in its stack.",
+          "properties": {
+            "index": {
+              "description": "Position in the strip, from 0.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stack_id": {
+              "description": "Identifies the stack while it exists: the public id of its first\nmember.",
+              "type": "string"
+            },
+            "visible": {
+              "description": "Whether this member is the one shown.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stack_id",
+            "index",
+            "visible"
           ],
           "type": "object"
         },
@@ -3262,6 +3298,43 @@
           ],
           "type": "object"
         },
+        "PaneStackParams": {
+          "description": "Local patch (spec 002): start a shell as a new nested tab (stack member)\nin a pane's slot.",
+          "properties": {
+            "cwd": {
+              "description": "Working directory; the target pane's if omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "focus": {
+              "default": false,
+              "description": "Focus the new member (implies `show`).",
+              "type": "boolean"
+            },
+            "label": {
+              "description": "Label for the new pane.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "show": {
+              "default": true,
+              "description": "Show the new member (default). When false it is added hidden and the\nslot keeps showing what it showed.",
+              "type": "boolean"
+            },
+            "target_pane_id": {
+              "description": "The pane whose slot gets the new member; the focused pane if omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "PaneSwapParams": {
           "properties": {
             "direction": {
@@ -5441,6 +5514,23 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PaneSplitParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Local patch (spec 002).",
+          "properties": {
+            "method": {
+              "const": "pane.stack",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneStackParams"
             }
           },
           "required": [
@@ -7937,6 +8027,17 @@
                 }
               ]
             },
+            "stack": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/PaneStackInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local patch (spec 002): set for members of a pane stack."
+            },
             "state_labels": {
               "additionalProperties": {
                 "type": "string"
@@ -8444,6 +8545,31 @@
             "offset_from_bottom",
             "max_offset_from_bottom",
             "viewport_rows"
+          ],
+          "type": "object"
+        },
+        "PaneStackInfo": {
+          "description": "Local patch (spec 002): a pane's place in its stack.",
+          "properties": {
+            "index": {
+              "description": "Position in the strip, from 0.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stack_id": {
+              "description": "Identifies the stack while it exists: the public id of its first\nmember.",
+              "type": "string"
+            },
+            "visible": {
+              "description": "Whether this member is the one shown.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stack_id",
+            "index",
+            "visible"
           ],
           "type": "object"
         },

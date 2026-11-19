@@ -130,6 +130,21 @@ pub(crate) fn render_tab_surface(
         surface.pane_infos,
         surface.split_borders,
     );
+    // Local patch (spec 002): pane-stack strips, over the rows kept for them.
+    if let Some(tab) = surface.target.and_then(|target| {
+        app.workspaces
+            .get(target.workspace_index)?
+            .tabs
+            .get(target.tab_index)
+    }) {
+        super::stack_strip::render_stack_strips(
+            app,
+            tab,
+            surface.pane_infos,
+            tab.layout.focused(),
+            frame,
+        );
+    }
 }
 
 pub(crate) fn tab_surface_hyperlinks(

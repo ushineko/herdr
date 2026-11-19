@@ -10,6 +10,7 @@ fn surface(boot_id: &str, rows: u16) -> DockSurface {
         panes: Vec::new(),
         splits: Vec::new(),
         zoomed: false,
+        stacks: Vec::new(),
     }
 }
 
@@ -118,6 +119,7 @@ fn two_pane_surface() -> DockSurface {
             path: Vec::new(),
         }],
         zoomed: false,
+        stacks: Vec::new(),
     }
 }
 
@@ -583,4 +585,93 @@ fn the_active_machine_decides_which_dock_is_shown() {
     );
     state.set_endpoint_dock_supported(&remote, false);
     assert!(state.active_dock_surface().is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Pane stacks in the dock (spec 002)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stack_keys_with_the_dock_focused_act_on_the_dock() {
+    let mut state = docked_state();
+    prefixed(&mut state, KeyCode::Char('u'), KeyModifiers::empty());
+    assert!(state.dock_focused);
+    let new = prefixed(&mut state, KeyCode::Char('t'), KeyModifiers::empty());
+    assert!(dock_controls(&new).contains(&DockControl::StackNew {
+        pane_id: "dock_1".into()
+    }));
+    let next = prefixed(&mut state, KeyCode::Char('.'), KeyModifiers::empty());
+    assert!(dock_controls(&next).contains(&DockControl::StackCycle {
+        pane_id: "dock_1".into(),
+        forward: true
+    }));
+}
+
+#[test]
+fn a_click_on_a_dock_strip_shows_that_member() {
+    let mut state = docked_state();
+    let mut surface = two_pane_surface();
+    surface.stacks = vec![crate::protocol::endpoint::PaneStackStrip {
+        strip: rect(0, 0, 49, 1),
+        visible: "dock_1".into(),
+        members: vec![
+            crate::protocol::endpoint::PaneStackMember {
+                pane_id: "dock_1".into(),
+                x: 0,
+                width: 20,
+                label: "usage".into(),
+            },
+            crate::protocol::endpoint::PaneStackMember {
+                pane_id: "dock_3".into(),
+                x: 20,
+                width: 20,
+                label: "shell".into(),
+            },
+        ],
+    }];
+    let local = super::super::ClientEndpointId::Local;
+    assert!(state.set_endpoint_dock_surface(&local, surface));
+    state.compose(COLS, ROWS).expect("frame");
+    let row = state.layout(COLS, ROWS).dock.y + 1;
+    let click = mouse(&mut state, MouseEventKind::Down(MouseButton::Left), 25, row);
+    assert!(dock_controls(&click).contains(&DockControl::Focus {
+        pane_id: "dock_3".into()
+    }));
+    let wheel = mouse(&mut state, MouseEventKind::ScrollUp, 25, row);
+    assert!(dock_controls(&wheel).contains(&DockControl::StackCycle {
+        pane_id: "dock_1".into(),
+        forward: false
+    }));
+}
+
+#[test]
+fn the_dock_menu_offers_a_new_nested_tab_when_the_server_has_them() {
+    let mut state = docked_state();
+    state.set_endpoint_pane_stacks_supported(&super::super::ClientEndpointId::Local, true);
+    mouse(
+        &mut state,
+        MouseEventKind::Down(MouseButton::Right),
+        10,
+        ROWS - 2,
+    );
+    let Some(ClientShellOverlay::ContextMenu(menu)) = state.overlay.as_ref() else {
+        panic!("right-click opens the dock menu");
+    };
+    let labels = menu
+        .items()
+        .iter()
+        .map(|item| item.label.to_string())
+        .collect::<Vec<_>>();
+    let index = labels
+        .iter()
+        .position(|label| label == "New nested tab")
+        .expect("offered in the dock menu");
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(index, &mut outcome);
+    assert_eq!(
+        dock_controls(&outcome),
+        vec![DockControl::StackNew {
+            pane_id: "dock_1".into()
+        }]
+    );
 }

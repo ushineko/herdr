@@ -371,6 +371,12 @@ impl HeadlessServer {
         has_app_target: bool,
         direct_terminal_targets: &HashSet<&str>,
     ) -> bool {
+        // Local patch (specs 001/002): dock panes are drawn by the dock's own
+        // stream, never by the tab surface, so their output alone does not
+        // need a pane-surface render.
+        if self.app.state.dock.contains(pane_id) {
+            return false;
+        }
         let terminal_id = self.terminal_id_for_pane(pane_id);
         (has_app_target && (terminal_id.is_none() || self.any_shell_surface_contains_pane(pane_id)))
             || terminal_id.is_none_or(|source| direct_terminal_targets.contains(source.as_str()))
@@ -438,7 +444,10 @@ impl HeadlessServer {
             else {
                 return false;
             };
-            tab.panes.contains_key(&pane_id) && (!tab.zoomed || tab.layout.focused() == pane_id)
+            // Local patch (spec 002): a hidden stack member is not on screen.
+            tab.panes.contains_key(&pane_id)
+                && !tab.is_hidden_pane(pane_id)
+                && (!tab.zoomed || tab.layout.focused() == pane_id)
         })
     }
 
@@ -745,7 +754,9 @@ impl HeadlessServer {
                         graphics,
                         graphics_delivery: next_graphics_delivery,
                         graphics_sources,
+                        stacks,
                     } = shell_render.expect("active shell surface");
+                    self.send_pane_stacks(client_id, stacks);
                     surface_parts = Some((
                         panes,
                         splits,

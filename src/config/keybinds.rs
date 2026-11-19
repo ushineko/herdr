@@ -407,6 +407,9 @@ pub struct Keybinds {
     pub focus_dock: ActionKeybinds,
     pub toggle_dock: ActionKeybinds,
     pub reset_dock: ActionKeybinds,
+    pub stack_new_pane: ActionKeybinds,
+    pub stack_next: ActionKeybinds,
+    pub stack_previous: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
 }
 
@@ -594,6 +597,9 @@ impl Config {
             focus_dock: empty_action!(),
             toggle_dock: empty_action!(),
             reset_dock: empty_action!(),
+            stack_new_pane: empty_action!(),
+            stack_next: empty_action!(),
+            stack_previous: empty_action!(),
             custom_commands: Vec::new(),
         };
 
@@ -750,6 +756,9 @@ impl Config {
             apply_action!(keybinds.focus_dock, focus_dock, source);
             apply_action!(keybinds.toggle_dock, toggle_dock, source);
             apply_action!(keybinds.reset_dock, reset_dock, source);
+            apply_action!(keybinds.stack_new_pane, stack_new_pane, source);
+            apply_action!(keybinds.stack_next, stack_next, source);
+            apply_action!(keybinds.stack_previous, stack_previous, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(

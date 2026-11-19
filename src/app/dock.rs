@@ -79,6 +79,8 @@ pub(crate) struct DockLayout {
     pub layout: TileLayout,
     pub panes: HashMap<PaneId, DockPane>,
     pub zoomed: bool,
+    /// Pane stacks in the dock (spec 002). Hidden members are in `panes`.
+    pub stacks: Vec<crate::workspace::PaneStack>,
 }
 
 pub(crate) enum DockState {
@@ -129,6 +131,8 @@ pub(crate) struct DockPaneGeometry {
     pub rect: Rect,
     pub inner: Rect,
     pub focused: bool,
+    /// The row above `inner` holding a stack's strip (spec 002).
+    pub strip: Option<Rect>,
 }
 
 /// Public id of a dock pane in dock controls and surfaces.
@@ -209,11 +213,13 @@ impl Dock {
         let area = self.area();
         let focused = dock.layout.focused();
         if dock.zoomed {
+            let (strip, inner) = stack_strip(dock, focused, area);
             return vec![DockPaneGeometry {
                 id: focused,
                 rect: area,
-                inner: area,
+                inner,
                 focused: true,
+                strip,
             }];
         }
         let mut panes = dock
@@ -229,11 +235,13 @@ impl Dock {
                 if rect.bottom() < area.bottom() && inner.height > 1 {
                     inner.height -= 1;
                 }
+                let (strip, inner) = stack_strip(dock, info.id, inner);
                 DockPaneGeometry {
                     id: info.id,
                     rect,
                     inner,
                     focused: info.id == focused,
+                    strip,
                 }
             })
             .collect::<Vec<_>>();
@@ -255,10 +263,24 @@ impl Dock {
                 .map(|id| (*id, (area.height, area.width)))
                 .collect();
         }
-        self.geometry()
+        let mut sizes: HashMap<PaneId, (u16, u16)> = self
+            .geometry()
             .into_iter()
             .map(|pane| (pane.id, (pane.inner.height.max(1), pane.inner.width.max(1))))
-            .collect()
+            .collect();
+        // Spec 002: hidden stack members are sized like their visible member.
+        for stack in &dock.stacks {
+            let Some(size) = stack
+                .visible()
+                .and_then(|visible| sizes.get(&visible).copied())
+            else {
+                continue;
+            };
+            for pane_id in &stack.panes {
+                sizes.entry(*pane_id).or_insert(size);
+            }
+        }
+        sizes
     }
 
     /// Move focus to the neighbouring dock pane, stopping at the dock's edges.
@@ -342,6 +364,7 @@ impl Dock {
             layout,
             panes,
             zoomed: false,
+            stacks: Vec::new(),
         });
         self.spawn_all()
     }
@@ -351,7 +374,8 @@ impl Dock {
         let Some(dock) = self.open() else {
             return Vec::new();
         };
-        let mut ids = dock.layout.pane_ids();
+        // Spec 002: hidden stack members are started too.
+        let mut ids = crate::workspace::stack::all_ids(&dock.layout, &dock.stacks);
         ids.sort_by_key(|id| id.raw());
         ids.into_iter()
             .filter_map(|id| {
@@ -470,8 +494,11 @@ impl Dock {
         if dock.panes.is_empty() {
             self.state = DockState::Closed;
         } else {
-            dock.layout.close_pane(pane_id);
-            if dock.panes.len() == 1 {
+            // Spec 002: a stack member hands its slot on instead.
+            if !crate::workspace::stack::unstack(&mut dock.layout, &mut dock.stacks, pane_id) {
+                dock.layout.close_pane(pane_id);
+            }
+            if dock.layout.pane_count() == 1 {
                 dock.zoomed = false;
             }
         }
@@ -518,6 +545,8 @@ impl Dock {
         if !dock.panes.contains_key(&pane_id) {
             return false;
         }
+        // Spec 002: a hidden stack member is shown first.
+        crate::workspace::stack::reveal(&mut dock.layout, &mut dock.stacks, pane_id);
         dock.layout.focus_pane(pane_id);
         true
     }
@@ -526,7 +555,7 @@ impl Dock {
         let Some(dock) = self.open_mut() else {
             return false;
         };
-        if dock.panes.len() < 2 && !dock.zoomed {
+        if dock.layout.pane_count() < 2 && !dock.zoomed {
             return false;
         }
         dock.zoomed = !dock.zoomed;
@@ -629,6 +658,7 @@ impl Dock {
             panes: HashMap::new(),
             focused: None,
             zoomed: false,
+            stacks: Vec::new(),
         };
         match &self.state {
             DockState::Unbuilt => return None,
@@ -637,6 +667,14 @@ impl Dock {
                 snapshot.layout = Some(crate::persist::capture_layout(dock.layout.root()));
                 snapshot.focused = Some(dock.layout.focused().raw());
                 snapshot.zoomed = dock.zoomed;
+                snapshot.stacks = dock
+                    .stacks
+                    .iter()
+                    .map(|stack| crate::persist::StackSnapshot {
+                        panes: stack.panes.iter().map(|id| id.raw()).collect(),
+                        active: stack.active,
+                    })
+                    .collect();
                 snapshot.panes = dock
                     .panes
                     .iter()
@@ -671,7 +709,28 @@ impl Dock {
             self.state = DockState::Closed;
             return;
         };
-        let (root, id_map) = crate::persist::restore_layout(saved_layout);
+        let (root, mut id_map) = crate::persist::restore_layout(saved_layout);
+        // Spec 002: hidden stack members get fresh ids alongside the tree.
+        let tree_ids: std::collections::HashSet<u32> = id_map.keys().copied().collect();
+        let stack_plans = restore_stack_plans(snapshot, &tree_ids);
+        for (members, visible) in &stack_plans {
+            for old in members {
+                if old != visible {
+                    id_map.insert(*old, PaneId::alloc());
+                }
+            }
+        }
+        let stacks = stack_plans
+            .iter()
+            .filter_map(|(members, visible)| {
+                let panes = members
+                    .iter()
+                    .filter_map(|old| id_map.get(old).copied())
+                    .collect::<Vec<_>>();
+                let active = members.iter().position(|old| old == visible)?;
+                (panes.len() >= 2).then_some(crate::workspace::PaneStack { panes, active })
+            })
+            .collect::<Vec<_>>();
         let panes = id_map
             .iter()
             .map(|(old, new)| {
@@ -687,9 +746,13 @@ impl Dock {
             .collect::<HashMap<_, _>>();
         let focus = snapshot
             .focused
+            .filter(|old| tree_ids.contains(old))
             .and_then(|old| id_map.get(&old).copied())
             .or_else(|| {
-                let mut ids = panes.keys().copied().collect::<Vec<_>>();
+                let mut ids = tree_ids
+                    .iter()
+                    .filter_map(|old| id_map.get(old).copied())
+                    .collect::<Vec<_>>();
                 ids.sort_by_key(|id| id.raw());
                 ids.first().copied()
             });
@@ -697,10 +760,12 @@ impl Dock {
             self.state = DockState::Closed;
             return;
         };
+        let layout = TileLayout::from_saved(root, focus);
         self.state = DockState::Open(DockLayout {
-            layout: TileLayout::from_saved(root, focus),
-            zoomed: snapshot.zoomed && panes.len() > 1,
+            zoomed: snapshot.zoomed && layout.pane_count() > 1,
+            layout,
             panes,
+            stacks,
         });
     }
 
@@ -963,6 +1028,25 @@ impl crate::app::App {
         true
     }
 
+    /// Spec 002: a new shell as a member of `target`'s stack, in its cwd.
+    pub(crate) fn dock_stack_new(&mut self, target: PaneId) -> bool {
+        let Some(cwd) = self
+            .state
+            .dock
+            .open()
+            .and_then(|dock| dock.panes.get(&target))
+            .map(|pane| self.dock_pane_cwd(pane))
+        else {
+            return false;
+        };
+        let Some(spawn) = self.state.dock.stack_new(target, cwd) else {
+            return false;
+        };
+        self.spawn_dock_processes(vec![spawn]);
+        self.dock_layout_changed();
+        true
+    }
+
     /// The live working directory of a dock pane, falling back to the one it
     /// started in.
     fn dock_pane_cwd(&self, pane: &DockPane) -> PathBuf {
@@ -1073,6 +1157,16 @@ impl crate::app::App {
                 changed
             }
             DockControl::ToggleZoom => self.dock_toggle_zoom(),
+            DockControl::StackNew { pane_id } => {
+                pane(&pane_id).is_some_and(|id| self.dock_stack_new(id))
+            }
+            DockControl::StackCycle { pane_id, forward } => pane(&pane_id).is_some_and(|id| {
+                let changed = self.state.dock.stack_cycle(id, forward);
+                if changed {
+                    self.dock_layout_changed();
+                }
+                changed
+            }),
             DockControl::Ratio { path, ratio } => self.dock_set_ratio(&path, ratio),
             DockControl::Resize { direction } => match direction {
                 DockDirection::Up | DockDirection::Down
@@ -1163,6 +1257,101 @@ impl crate::app::App {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pane stacks in the dock (spec 002, ushineko/specs/002-nested-tabs.md)
+// ---------------------------------------------------------------------------
+
+/// Split a dock pane's area into its strip row and the program's area. Only a
+/// stack's visible member has a strip, and only with two or more rows.
+fn stack_strip(dock: &DockLayout, pane_id: PaneId, inner: Rect) -> (Option<Rect>, Rect) {
+    let stacked = crate::workspace::stack::stack_of(&dock.stacks, pane_id)
+        .is_some_and(|stack| stack.visible() == Some(pane_id));
+    if !stacked || inner.height < 2 {
+        return (None, inner);
+    }
+    (
+        Some(Rect::new(inner.x, inner.y, inner.width, 1)),
+        Rect::new(inner.x, inner.y + 1, inner.width, inner.height - 1),
+    )
+}
+
+/// Saved dock stacks that can be rebuilt: exactly one member in the saved
+/// tree (the visible one), hidden members with a saved pane entry, each pane in
+/// one stack, two or more members. Returns (members, visible) by saved id.
+fn restore_stack_plans(
+    snapshot: &crate::persist::DockSnapshot,
+    tree_ids: &HashSet<u32>,
+) -> Vec<(Vec<u32>, u32)> {
+    let mut claimed = HashSet::new();
+    let mut plans = Vec::new();
+    for stack in &snapshot.stacks {
+        let mut members = Vec::new();
+        let mut visible = None;
+        for old in &stack.panes {
+            if claimed.contains(old) || members.contains(old) {
+                continue;
+            }
+            if tree_ids.contains(old) {
+                if visible.is_none() {
+                    visible = Some(*old);
+                    members.push(*old);
+                }
+            } else if snapshot.panes.contains_key(old) {
+                members.push(*old);
+            }
+        }
+        match visible {
+            Some(visible) if members.len() >= 2 => {
+                claimed.extend(members.iter().copied());
+                plans.push((members, visible));
+            }
+            _ => tracing::warn!(
+                members = stack.panes.len(),
+                "dock: dropped a saved pane stack without a slot or members"
+            ),
+        }
+    }
+    plans
+}
+
+impl Dock {
+    /// Whether a dock pane is a hidden stack member.
+    pub(crate) fn is_hidden(&self, pane_id: PaneId) -> bool {
+        self.open()
+            .is_some_and(|dock| crate::workspace::stack::is_hidden(&dock.stacks, pane_id))
+    }
+
+    /// Add a user pane running the default shell in `cwd` as a new member of
+    /// `target`'s stack, shown and focused. Returns its spawn request.
+    pub(crate) fn stack_new(&mut self, target: PaneId, cwd: PathBuf) -> Option<SpawnRequest> {
+        let dock = self.open_mut()?;
+        if !dock.panes.contains_key(&target) {
+            return None;
+        }
+        let new_id = PaneId::alloc();
+        if !crate::workspace::stack::push_member(&mut dock.layout, &mut dock.stacks, target, new_id)
+        {
+            return None;
+        }
+        dock.panes
+            .insert(new_id, DockPane::new(DockPaneOrigin::User, cwd));
+        dock.zoomed = false;
+        let pane = self.open()?.panes.get(&new_id)?;
+        Some(self.spawn_request(new_id, pane))
+    }
+
+    /// Show the next (or previous) member of `pane_id`'s stack, focused.
+    pub(crate) fn stack_cycle(&mut self, pane_id: PaneId, forward: bool) -> bool {
+        let Some(target) = self
+            .open()
+            .and_then(|dock| crate::workspace::stack::neighbour(&dock.stacks, pane_id, forward))
+        else {
+            return false;
+        };
+        self.focus(target)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1183,7 +1372,7 @@ pub(crate) mod tests {
         }
     }
 
-    fn seeded_dock(entries: &[(&str, &str, u16)]) -> (Dock, Vec<SpawnRequest>) {
+    pub(crate) fn seeded_dock(entries: &[(&str, &str, u16)]) -> (Dock, Vec<SpawnRequest>) {
         let mut dock = Dock {
             seed: seed(entries),
             width: 100,
@@ -1193,7 +1382,7 @@ pub(crate) mod tests {
         (dock, spawns)
     }
 
-    fn start_all(dock: &mut Dock, spawns: &[SpawnRequest], now: Instant) {
+    pub(crate) fn start_all(dock: &mut Dock, spawns: &[SpawnRequest], now: Instant) {
         for spawn in spawns {
             dock.started(spawn.pane_id, TerminalId::alloc(), now);
         }
@@ -1801,5 +1990,105 @@ mod app_tests {
         assert_eq!(saved.label.as_deref(), Some("usage"));
         assert_eq!(saved.command.as_deref(), Some("sleep 5"));
         shut_down(&mut app);
+    }
+
+    // -----------------------------------------------------------------------
+    // Pane stacks in the dock (spec 002)
+    // -----------------------------------------------------------------------
+
+    /// `usage` with a user shell stacked over it, both started.
+    fn stacked_dock() -> (Dock, PaneId, PaneId) {
+        let t0 = Instant::now();
+        let (mut dock, spawns) = super::tests::seeded_dock(&[("usage", "hayami", 1)]);
+        let seeded = spawns[0].pane_id;
+        super::tests::start_all(&mut dock, &spawns, t0);
+        let added = dock
+            .stack_new(seeded, PathBuf::from("/tmp"))
+            .expect("a stacked dock pane");
+        dock.started(added.pane_id, TerminalId::alloc(), t0);
+        (dock, seeded, added.pane_id)
+    }
+
+    #[test]
+    fn a_dock_stack_keeps_its_slot_and_draws_a_strip_row() {
+        let (dock, seeded, added) = stacked_dock();
+        let layout = dock.open().unwrap();
+        assert_eq!(layout.layout.pane_count(), 1, "no new slot");
+        assert_eq!(layout.panes.len(), 2);
+        assert!(dock.is_hidden(seeded) && !dock.is_hidden(added));
+        let geometry = dock.geometry();
+        assert_eq!(geometry.len(), 1);
+        let strip = geometry[0].strip.expect("the visible member has a strip");
+        assert_eq!(strip.y, 0);
+        assert_eq!(geometry[0].inner.y, 1, "the program starts below the strip");
+        let sizes = dock.pane_sizes();
+        assert_eq!(
+            sizes[&seeded], sizes[&added],
+            "the hidden member is sized alike"
+        );
+        assert_eq!(sizes[&added].0, dock.rows - 1);
+    }
+
+    #[test]
+    fn dock_stacks_cycle_focus_and_hand_the_slot_on_when_closed() {
+        let (mut dock, seeded, added) = stacked_dock();
+        assert!(dock.stack_cycle(added, true));
+        assert!(!dock.is_hidden(seeded) && dock.is_hidden(added));
+        assert!(dock.focus(added), "focusing a hidden member shows it");
+        assert!(!dock.is_hidden(added));
+
+        assert!(dock.close(added).is_some());
+        let layout = dock.open().unwrap();
+        assert_eq!(
+            layout.layout.pane_ids(),
+            vec![seeded],
+            "the seeded pane shows again"
+        );
+        assert!(layout.stacks.is_empty());
+        assert!(!dock.toggle_zoom(), "one pane left cannot zoom");
+    }
+
+    #[test]
+    fn dock_stacks_are_saved_restored_and_their_hidden_members_started() {
+        let (dock, _seeded, _added) = stacked_dock();
+        let snapshot = dock.to_snapshot().expect("an open dock is saved");
+        assert_eq!(snapshot.stacks.len(), 1);
+        let mut restored = Dock {
+            width: 100,
+            ..Dock::default()
+        };
+        restored.restore(&snapshot);
+        let layout = restored.open().expect("restored open");
+        assert_eq!(layout.stacks.len(), 1);
+        assert_eq!(layout.panes.len(), 2);
+        let visible = layout.stacks[0].visible().unwrap();
+        assert_eq!(layout.layout.pane_ids(), vec![visible]);
+        assert_eq!(
+            layout.panes[&visible].label(),
+            None,
+            "the user shell stays the visible member"
+        );
+        assert_eq!(
+            restored.spawn_pending().len(),
+            2,
+            "hidden members start too"
+        );
+
+        let mut damaged = snapshot.clone();
+        damaged.stacks[0].panes.push(999);
+        damaged.stacks.push(crate::persist::StackSnapshot {
+            panes: vec![424242, 1],
+            active: 0,
+        });
+        let mut repaired = Dock {
+            width: 100,
+            ..Dock::default()
+        };
+        repaired.restore(&damaged);
+        assert_eq!(
+            repaired.open().unwrap().stacks.len(),
+            1,
+            "repaired, not failed"
+        );
     }
 }

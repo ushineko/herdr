@@ -10,6 +10,9 @@ impl ClientShellState {
             if self.dock_binding(*action, outcome) {
                 return;
             }
+            if self.stack_binding(*action, outcome) {
+                return;
+            }
         }
         match binding {
             crate::input::KeybindMatch::Action(crate::input::KeybindAction::Detach) => {
@@ -1099,10 +1102,12 @@ impl ClientShellState {
             }
             KeybindAction::CyclePaneNext | KeybindAction::CyclePanePrevious => {
                 let focused_tab = focused_tab?;
+                // Local patch (spec 002): hidden stack members are skipped.
+                let hidden = self.hidden_pane_ids();
                 let panes = snapshot
                     .panes
                     .iter()
-                    .filter(|pane| pane.tab_id == focused_tab)
+                    .filter(|pane| pane.tab_id == focused_tab && !hidden.contains(&pane.pane_id))
                     .collect::<Vec<_>>();
                 if panes.is_empty() {
                     return None;

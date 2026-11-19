@@ -23,8 +23,8 @@ impl Tab {
         terminals: &HashMap<TerminalId, TerminalState>,
         tab_idx: usize,
     ) -> Vec<PaneDetail> {
-        self.layout
-            .pane_ids()
+        // Local patch (spec 002): hidden stack members too.
+        self.all_pane_ids()
             .iter()
             .filter_map(|id| {
                 let pane = self.panes.get(id)?;

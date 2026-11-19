@@ -133,6 +133,16 @@ pub fn handoff_pane_aliases(
                     aliases.insert(old_id, new_id);
                 }
             }
+            // Local patch (spec 002): stack members, positionally like the
+            // tree. A handoff snapshot comes from a live tab, so its stacks
+            // restore without repair and line up.
+            for (saved, restored) in tab_snap.stacks.iter().zip(&tab.stacks) {
+                for (old_id, new_id) in saved.panes.iter().zip(&restored.panes) {
+                    if *old_id != new_id.raw() {
+                        aliases.entry(*old_id).or_insert(*new_id);
+                    }
+                }
+            }
         }
     }
     aliases
@@ -385,7 +395,8 @@ fn restore_workspace(
             tab.number = public_tab_number;
         }
         next_public_tab_number = next_public_tab_number.max(tab.number + 1);
-        for pane_id in tab.layout.pane_ids() {
+        // Local patch (spec 002): hidden stack members keep their numbers too.
+        for pane_id in tab.all_pane_ids() {
             let public_number = public_pane_numbers_by_old_raw
                 .get(
                     &reverse_id_map
@@ -500,12 +511,17 @@ fn restore_tab(
     imported_panes: &mut HashMap<u32, crate::handoff_runtime::ImportedHandoffRuntime>,
     public_pane_ids_by_old_raw: &HashMap<u32, String>,
 ) -> RestoreFailures<Option<RestoredTab>> {
-    let (node, id_map) = restore_node_remapped(&snap.layout);
+    let (mut node, mut id_map) = restore_node_remapped(&snap.layout);
+    // Local patch (spec 002): hidden stack members get fresh ids too, and are
+    // restored through the same per-pane path as tree panes.
+    let stack_plans = super::stack_restore::plan_stacks(snap, &id_map);
+    let hidden_ids = super::stack_restore::allocate_hidden_ids(&stack_plans, &mut id_map);
     let reverse_id_map: HashMap<PaneId, u32> = id_map
         .iter()
         .map(|(&old_id, &new_id)| (new_id, old_id))
         .collect();
-    let pane_ids = collect_pane_ids(&node);
+    let mut pane_ids = collect_pane_ids(&node);
+    pane_ids.extend(hidden_ids);
 
     let mut panes = HashMap::new();
     let mut terminals = Vec::new();
@@ -770,6 +786,7 @@ fn restore_tab(
     }
 
     let surviving: HashSet<PaneId> = panes.keys().copied().collect();
+    let stacks = super::stack_restore::finish_stacks(&stack_plans, &id_map, &surviving, &mut node);
     let Some(node) = prune_restored_node(node, &surviving) else {
         warn!(
             tab = ?snap.custom_name,
@@ -778,7 +795,9 @@ fn restore_tab(
         return (None, failed_imports);
     };
     let pane_ids = collect_pane_ids(&node);
-    let Some(focus) = resolve_restored_pane(snap.focused, &id_map, &surviving, &pane_ids) else {
+    // Focus must be a leaf; a hidden member is never focused.
+    let leaves: HashSet<PaneId> = pane_ids.iter().copied().collect();
+    let Some(focus) = resolve_restored_pane(snap.focused, &id_map, &leaves, &pane_ids) else {
         return (None, failed_imports);
     };
     let Some(root_pane) = resolve_restored_pane(snap.root_pane, &id_map, &surviving, &pane_ids)
@@ -798,6 +817,7 @@ fn restore_tab(
                 #[cfg(test)]
                 runtimes: HashMap::new(),
                 zoomed: snap.zoomed,
+                stacks,
                 events: runtime_context.events.clone(),
                 render_notify: runtime_context.render_notify.clone(),
                 render_dirty: runtime_context.render_dirty.clone(),
@@ -1559,6 +1579,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(0),
                     root_pane: Some(0),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],
@@ -1655,6 +1676,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(10),
                     root_pane: Some(10),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],
@@ -1740,6 +1762,7 @@ mod tests {
                         zoomed: false,
                         focused: Some(10),
                         root_pane: Some(10),
+                        stacks: Vec::new(),
                     },
                     TabSnapshot {
                         custom_name: None,
@@ -1748,6 +1771,7 @@ mod tests {
                         zoomed: false,
                         focused: Some(11),
                         root_pane: Some(11),
+                        stacks: Vec::new(),
                     },
                     TabSnapshot {
                         custom_name: None,
@@ -1756,6 +1780,7 @@ mod tests {
                         zoomed: false,
                         focused: Some(12),
                         root_pane: Some(12),
+                        stacks: Vec::new(),
                     },
                     TabSnapshot {
                         custom_name: None,
@@ -1764,6 +1789,7 @@ mod tests {
                         zoomed: false,
                         focused: Some(13),
                         root_pane: Some(13),
+                        stacks: Vec::new(),
                     },
                 ],
                 active_tab: 3,
@@ -1828,6 +1854,7 @@ mod tests {
                 zoomed: false,
                 focused: Some(10),
                 root_pane: Some(10),
+                stacks: Vec::new(),
             }],
             active_tab: 0,
         };
@@ -1878,6 +1905,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(0),
                     root_pane: Some(0),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],
@@ -2219,6 +2247,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(0),
                     root_pane: Some(0),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],

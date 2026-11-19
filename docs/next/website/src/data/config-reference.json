@@ -918,6 +918,24 @@
           "description": "Local patch. Rebuild the dock from ui.dock, discarding runtime splits and sizes."
         },
         {
+          "key": "keys.stack_new_pane",
+          "type": "keybinding",
+          "default": "prefix+t",
+          "description": "Local patch. Start a shell as a new nested tab in the focused pane's slot, and show it."
+        },
+        {
+          "key": "keys.stack_next",
+          "type": "keybinding",
+          "default": "prefix+period",
+          "description": "Local patch. Show the next nested tab in the focused slot."
+        },
+        {
+          "key": "keys.stack_previous",
+          "type": "keybinding",
+          "default": "prefix+comma",
+          "description": "Local patch. Show the previous nested tab in the focused slot."
+        },
+        {
           "key": "keys.toggle_sidebar_layout",
           "type": "string",
           "default": "prefix+shift+b",

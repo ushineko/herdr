@@ -54,6 +54,9 @@ pub struct DockSurface {
     pub splits: Vec<DockSurfaceSplit>,
     #[serde(default)]
     pub zoomed: bool,
+    /// Spec 002: pane stacks in the dock, with strips in dock coordinates.
+    #[serde(default)]
+    pub stacks: Vec<PaneStackStrip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,9 +141,91 @@ pub enum DockControl {
     },
     ResetRows,
     Reset,
+    /// Spec 002: start a shell as a new member of the pane's stack.
+    StackNew {
+        pane_id: String,
+    },
+    /// Spec 002: show the next (or previous) member of the pane's stack.
+    StackCycle {
+        pane_id: String,
+        #[serde(default = "default_true")]
+        forward: bool,
+    },
     /// A newer client's operation this server does not know.
     #[serde(other)]
     Unknown,
+}
+
+/// Local patch: pane stacks (spec 002, ushineko/specs/002-nested-tabs.md).
+/// Advertised in the welcome. The server sends `PANE_STACK_SURFACE_KIND` to
+/// every shell client whenever the stacks in its view change (stock clients
+/// ignore it); clients send `PANE_STACK_CONTROL_KIND` only when the capability
+/// is present.
+pub const PANE_STACKS_CAPABILITY: &str = "pane_stacks";
+pub const PANE_STACK_SURFACE_KIND: &str = "endpoint.pane-stack.v1";
+pub const PANE_STACK_CONTROL_KIND: &str = "endpoint.pane-stack.control.v1";
+
+/// The pane stacks in one client's view, with their strips as drawn.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaneStackSurface {
+    #[serde(default)]
+    pub boot_id: String,
+    #[serde(default)]
+    pub stacks: Vec<PaneStackStrip>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaneStackStrip {
+    /// The strip row, in pane-surface coordinates.
+    pub strip: super::SurfaceRect,
+    /// Public id of the visible member.
+    pub visible: String,
+    #[serde(default)]
+    pub members: Vec<PaneStackMember>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaneStackMember {
+    /// Public pane id.
+    pub pane_id: String,
+    /// The entry's cells in the strip row.
+    pub x: u16,
+    pub width: u16,
+    #[serde(default)]
+    pub label: String,
+}
+
+/// Client-to-server pane-stack operations. A missing `pane_id` means the
+/// focused pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PaneStackControl {
+    /// Start a shell as a new member of the pane's slot.
+    New {
+        #[serde(default)]
+        pane_id: Option<String>,
+    },
+    /// Show a member and focus it.
+    Show { pane_id: String },
+    /// Show the next (or previous) member of the pane's stack.
+    Cycle {
+        #[serde(default)]
+        pane_id: Option<String>,
+        #[serde(default = "default_true")]
+        forward: bool,
+    },
+    /// A newer client's operation this server does not know.
+    #[serde(other)]
+    Unknown,
+}
+
+pub fn pane_stack_control_message(
+    control: &PaneStackControl,
+) -> serde_json::Result<super::ClientMessage> {
+    Ok(super::ClientMessage::EndpointControl {
+        kind: PANE_STACK_CONTROL_KIND.into(),
+        data: serde_json::to_string(control)?,
+    })
 }
 
 pub fn dock_control_message(control: &DockControl) -> serde_json::Result<super::ClientMessage> {
@@ -293,6 +378,7 @@ impl EndpointServerWelcome {
                 AGENT_VIEW_PROJECTION_CAPABILITY.into(),
                 AGENT_COMPLETIONS_CAPABILITY.into(),
                 DOCK_CAPABILITY.into(),
+                PANE_STACKS_CAPABILITY.into(),
             ],
             error: None,
         }
@@ -357,6 +443,46 @@ mod tests {
             },
             "a direction from a newer peer still parses"
         );
+    }
+
+    #[test]
+    fn pane_stack_controls_round_trip_and_unknown_ops_decode_as_unknown() {
+        let controls = [
+            PaneStackControl::New { pane_id: None },
+            PaneStackControl::Show {
+                pane_id: "w1-3".into(),
+            },
+            PaneStackControl::Cycle {
+                pane_id: Some("w1-3".into()),
+                forward: false,
+            },
+        ];
+        for control in controls {
+            let super::super::ClientMessage::EndpointControl { kind, data } =
+                pane_stack_control_message(&control).unwrap()
+            else {
+                panic!("pane-stack controls ride EndpointControl");
+            };
+            assert_eq!(kind, PANE_STACK_CONTROL_KIND);
+            assert_eq!(
+                serde_json::from_str::<PaneStackControl>(&data).unwrap(),
+                control
+            );
+        }
+        assert_eq!(
+            serde_json::from_str::<PaneStackControl>(r#"{"op":"from_the_future","x":1}"#).unwrap(),
+            PaneStackControl::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<PaneStackControl>(r#"{"op":"cycle"}"#).unwrap(),
+            PaneStackControl::Cycle {
+                pane_id: None,
+                forward: true
+            },
+            "optional fields default"
+        );
+        let surface: PaneStackSurface = serde_json::from_str("{}").unwrap();
+        assert!(surface.stacks.is_empty(), "every surface field is optional");
     }
 
     #[test]
@@ -555,6 +681,7 @@ mod tests {
                 AGENT_VIEW_PROJECTION_CAPABILITY.to_string(),
                 AGENT_COMPLETIONS_CAPABILITY.to_string(),
                 DOCK_CAPABILITY.to_string(),
+                PANE_STACKS_CAPABILITY.to_string(),
             ]
         );
     }

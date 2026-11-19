@@ -1780,6 +1780,11 @@ impl ClientShellState {
         if self.scroll_in_progress_selection(mouse, outcome) {
             return;
         }
+        // Local patch (spec 002): strips, including dock strips, before the
+        // dock's own pane handling.
+        if self.handle_stack_mouse(mouse, outcome) {
+            return;
+        }
         if self.handle_dock_mouse(mouse, outcome) {
             return;
         }

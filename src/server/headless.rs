@@ -83,6 +83,7 @@ mod native_graphics;
 mod notifications;
 mod render;
 mod retained_surface;
+mod stacks;
 mod surface_interest;
 
 // Producers can refill even a bounded channel while it is being drained.
@@ -2367,6 +2368,9 @@ impl HeadlessServer {
             }
             ServerEvent::ClientDockControl { client_id, data } => {
                 self.handle_client_dock_control(client_id, data)
+            }
+            ServerEvent::ClientPaneStackControl { client_id, data } => {
+                self.handle_client_pane_stack_control(client_id, data)
             }
             ServerEvent::ClientShellPaneInput {
                 client_id,

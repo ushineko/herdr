@@ -46,6 +46,9 @@ pub struct DockSnapshot {
     pub focused: Option<u32>,
     #[serde(default)]
     pub zoomed: bool,
+    /// Pane stacks in the dock (spec 002). Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<StackSnapshot>,
 }
 
 /// One saved dock pane. `label` and `command` together mark a seeded pane.
@@ -124,6 +127,20 @@ pub struct TabSnapshot {
     pub focused: Option<u32>,
     #[serde(default)]
     pub root_pane: Option<u32>,
+    /// Local patch (spec 002): pane stacks. The tree holds each stack's
+    /// visible member; hidden members are in `panes`. Stock herdr ignores the
+    /// field and restores the tree. Omitted when empty, so stack-free sessions
+    /// serialize (and fingerprint) exactly as stock does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stacks: Vec<StackSnapshot>,
+}
+
+/// Local patch (spec 002): one saved pane stack, by saved pane id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StackSnapshot {
+    pub panes: Vec<u32>,
+    #[serde(default)]
+    pub active: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -192,6 +209,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
             zoomed: snap.zoomed,
             focused: snap.focused,
             root_pane: snap.root_pane,
+            stacks: Vec::new(),
         };
 
         Self {
@@ -438,6 +456,14 @@ fn capture_tab(
         zoomed: tab.zoomed,
         focused: Some(tab.layout.focused().raw()),
         root_pane: Some(tab.root_pane.raw()),
+        stacks: tab
+            .stacks
+            .iter()
+            .map(|stack| StackSnapshot {
+                panes: stack.panes.iter().map(|id| id.raw()).collect(),
+                active: stack.active,
+            })
+            .collect(),
     }
 }
 
@@ -603,6 +629,7 @@ mod tests {
             ]),
             focused: Some(8),
             zoomed: false,
+            stacks: Vec::new(),
         };
         let json = dock_session_json(&format!(
             ",\"dock\":{}",
@@ -847,6 +874,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(0),
                     root_pane: Some(0),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],
@@ -1549,6 +1577,7 @@ mod tests {
                     zoomed: false,
                     focused: Some(0),
                     root_pane: Some(0),
+                    stacks: Vec::new(),
                 }],
                 active_tab: 0,
             }],

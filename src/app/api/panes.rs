@@ -1155,12 +1155,24 @@ impl App {
             ResolvedPaneMoveDestination::NewWorkspace { .. } => true,
         };
         if cross_workspace {
+            // Local patch (spec 002): a moved stack's hidden members move too.
+            let hidden_aliases: Vec<(String, crate::layout::PaneId)> = moved
+                .pane_ids()
+                .into_iter()
+                .filter(|id| *id != source_pane_id)
+                .filter_map(|id| Some((self.public_pane_id(source_ws_idx, id)?, id)))
+                .collect();
             if let Some(ws) = self.state.workspaces.get_mut(source_ws_idx) {
-                ws.unregister_moved_pane(source_pane_id);
+                for id in moved.pane_ids() {
+                    ws.unregister_moved_pane(id);
+                }
             }
             self.state
                 .public_pane_id_aliases
                 .insert(previous_pane_id.clone(), source_pane_id);
+            for (public_id, id) in hidden_aliases {
+                self.state.public_pane_id_aliases.insert(public_id, id);
+            }
         }
 
         let mut closed_workspace_id = None;
@@ -2203,8 +2215,9 @@ impl App {
             .get(ws_idx)?
             .tabs
             .get(tab_idx)?
-            .layout
-            .pane_count();
+            // Local patch (spec 002): pane states, not leaves (stacks).
+            .panes
+            .len();
         (pane_count > 1).then_some((ws_idx, tab_idx))
     }
 }

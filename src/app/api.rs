@@ -940,6 +940,9 @@ impl App {
         use crate::api::schema::{
             ErrorBody, ErrorResponse, Method, ResponseResult, SuccessResponse,
         };
+        // Local patch (spec 002): geometry requests on a hidden stack member
+        // reveal it first, then act on its slot.
+        self.reveal_geometry_targets(&request.method);
 
         let response = match request.method {
             Method::ServerStop(_) => {
@@ -1144,6 +1147,7 @@ impl App {
                 return self.handle_agent_send_keys(request.id, params);
             }
             Method::PaneSplit(params) => return self.handle_pane_split(request.id, params),
+            Method::PaneStack(params) => return self.handle_pane_stack(request.id, params),
             Method::PaneSwap(params) => return self.handle_pane_swap(request.id, params),
             Method::PaneMove(params) => return self.handle_pane_move(request.id, params),
             Method::PaneZoom(params) => return self.handle_pane_zoom(request.id, params),
