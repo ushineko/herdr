@@ -1336,6 +1336,16 @@ async fn run_client_loop(
                 } else if let Err(e) = write_to_server(&mut write_stream, &msg) {
                     return Err(ClientError::ConnectionLost(e));
                 }
+                // Local patch: the dock takes this client's new width.
+                if pending_activation.is_none() {
+                    if let Some(width) = state
+                        .shell
+                        .as_ref()
+                        .and_then(|shell| shell.dock_width_message(new_cols))
+                    {
+                        let _ = write_to_server(&mut write_stream, &width);
+                    }
+                }
             }
             ClientLoopEvent::EndpointSupervisor(event) => match event {
                 endpoint::EndpointSupervisorEvent::Status {
@@ -2118,12 +2128,34 @@ async fn run_client_loop(
                             Ok(endpoint::EndpointControlMessage::HealthPong) => continue,
                             Ok(endpoint::EndpointControlMessage::Dock(surface)) => {
                                 let (cols, rows) = state.reported_size;
+                                let (cell_width_px, cell_height_px) = state.reported_cell_size;
+                                let pixel_mouse = state.pixel_mouse_available();
+                                let mut resize = None;
                                 let frame = state.shell.as_mut().and_then(|shell| {
-                                    shell
-                                        .set_endpoint_dock_surface(&endpoint_id, *surface)
-                                        .then(|| shell.compose(cols, rows))
-                                        .flatten()
+                                    let previous = shell.surface_size(cols, rows);
+                                    if !shell.set_endpoint_dock_surface(&endpoint_id, *surface) {
+                                        return None;
+                                    }
+                                    // A dock height change moves the pane area; the
+                                    // server must resize the panes to match.
+                                    if shell.surface_size(cols, rows) != previous {
+                                        shell.invalidate_pane_surface();
+                                        resize = Some(client_shell_resize_message(
+                                            shell,
+                                            cols,
+                                            rows,
+                                            cell_width_px,
+                                            cell_height_px,
+                                            pixel_mouse,
+                                        ));
+                                    }
+                                    shell.compose(cols, rows)
                                 });
+                                if let Some(resize) = resize {
+                                    if pending_activation.is_none() {
+                                        let _ = write_to_server(&mut write_stream, &resize);
+                                    }
+                                }
                                 if let Some(frame) = frame {
                                     state.present_frame(frame);
                                 }

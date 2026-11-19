@@ -26,6 +26,9 @@ pub(super) struct ClientChromePreferences {
     pub(super) sidebar_layout: Option<crate::config::SidebarLayoutConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) agent_panel_sort: Option<crate::config::AgentPanelSortConfig>,
+    /// Local patch: the dock was hidden or shown on this client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) dock_hidden: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) collapsed_groups: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

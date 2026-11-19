@@ -864,6 +864,49 @@ fn process_exists(pid: libc::pid_t) -> bool {
     }
 }
 
+/// Local patch (dock): send one named endpoint control from a client shell.
+pub fn send_endpoint_control(
+    stream: &mut UnixStream,
+    kind: &str,
+    data: &str,
+) -> Result<(), String> {
+    let payload = encode_varint_enum(
+        CLIENT_MESSAGE_ENDPOINT_CONTROL,
+        &[&encode_string(kind), &encode_string(data)],
+    );
+    stream
+        .write_all(&frame_message(&payload))
+        .map_err(|err| err.to_string())
+}
+
+/// Local patch (dock): wait for a named endpoint control whose data satisfies
+/// `accept`, returning that data.
+pub fn read_endpoint_control<F>(
+    stream: &mut UnixStream,
+    kind: &str,
+    timeout: Duration,
+    mut accept: F,
+) -> Option<String>
+where
+    F: FnMut(&str) -> bool,
+{
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if let Ok((SERVER_MESSAGE_ENDPOINT_CONTROL, payload)) = read_server_message(stream) {
+            let mut offset = 0;
+            if decode_string(&payload, &mut offset).as_deref() == Ok(kind) {
+                if let Ok(data) = decode_string(&payload, &mut offset) {
+                    if accept(&data) {
+                        return Some(data);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

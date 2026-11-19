@@ -338,12 +338,21 @@ impl ClientShellState {
             self.hits.tab_scroll_left = Rect::default();
             self.hits.tab_scroll_right = Rect::default();
         }
+        let dock_hits = self.render_dock_chrome(&mut buffer, layout);
+        if dock_hits.panes.is_empty() {
+            // A dock that is not on screen cannot hold the keyboard.
+            self.dock_focused = false;
+        }
+        self.hits.dock_rule = dock_hits.rule;
+        self.hits.dock_panes = dock_hits.panes;
+        self.hits.dock_splits = dock_hits.splits;
         let mut frame = FrameData::from_ratatui_buffer_with_hyperlinks(&buffer, None, &[]);
         let mode_bar_cells = mode_bar.map(|bar| {
             let start = usize::from(bar.y) * usize::from(frame.width) + usize::from(bar.x);
             frame.cells[start..start + usize::from(bar.width)].to_vec()
         });
         blit_pane_surface(&mut frame, &surface.frame, layout.pane_surface);
+        self.blit_dock(&mut frame, layout);
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let mut occlusion = crate::kitty_graphics::surface::Occlusion::default();
         let has_selection = self

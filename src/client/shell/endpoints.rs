@@ -225,8 +225,6 @@ impl ClientShellState {
     }
 
     /// Local patch: the active endpoint's dock surface, if it has a dock.
-    // Drawn by the client dock layout in the next commit of this series.
-    #[allow(dead_code)]
     pub(crate) fn active_dock_surface(&self) -> Option<&crate::protocol::endpoint::DockSurface> {
         self.endpoints
             .iter()

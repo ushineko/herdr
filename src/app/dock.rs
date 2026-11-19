@@ -55,9 +55,6 @@ pub(crate) struct DockPane {
     pub respawn_at: Option<Instant>,
 }
 
-// Parts of this API are driven by the dock's client protocol and keys, which
-// land in later commits of this series.
-#[allow(dead_code)]
 impl DockPane {
     fn new(origin: DockPaneOrigin, cwd: PathBuf) -> Self {
         Self {
@@ -180,12 +177,7 @@ fn dirs_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
-#[allow(dead_code)]
 impl Dock {
-    pub(crate) fn is_open(&self) -> bool {
-        matches!(self.state, DockState::Open(_))
-    }
-
     pub(crate) fn open(&self) -> Option<&DockLayout> {
         match &self.state {
             DockState::Open(dock) => Some(dock),
@@ -203,14 +195,6 @@ impl Dock {
     pub(crate) fn contains(&self, pane_id: PaneId) -> bool {
         self.open()
             .is_some_and(|dock| dock.panes.contains_key(&pane_id))
-    }
-
-    pub(crate) fn pane_for_terminal(&self, terminal_id: &TerminalId) -> Option<PaneId> {
-        self.open()?
-            .panes
-            .iter()
-            .find(|(_, pane)| pane.terminal_id.as_ref() == Some(terminal_id))
-            .map(|(id, _)| *id)
     }
 
     /// The area the dock's panes are laid out in.
@@ -732,7 +716,6 @@ impl Dock {
 // Server glue
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 impl crate::app::App {
     /// Build or restore the dock at startup. A saved dock wins over the seed.
     pub(crate) fn init_dock(
@@ -1374,7 +1357,7 @@ pub(crate) mod tests {
         let mut unbuilt = Dock::default();
         let spawns = unbuilt.apply_seed(seed(&[("a", "x", 1)]));
         assert_eq!(spawns.len(), 1);
-        assert!(unbuilt.is_open());
+        assert!(unbuilt.open().is_some());
     }
 
     #[test]

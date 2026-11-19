@@ -10,6 +10,7 @@ mod composition;
 mod config;
 mod context_menu;
 mod copy_mode;
+mod dock;
 mod endpoint_agent_state;
 mod endpoint_agents;
 mod endpoint_navigation;
@@ -78,6 +79,16 @@ fn target_event_message(target: ClientInputTarget, event: ClientPaneInputEvent) 
             terminal_id,
             events: vec![event],
         },
+        ClientInputTarget::Dock(pane_id) => crate::protocol::endpoint::dock_control_message(
+            &crate::protocol::endpoint::DockControl::Input {
+                pane_id,
+                events: vec![event],
+            },
+        )
+        .unwrap_or(ClientMessage::EndpointControl {
+            kind: crate::protocol::endpoint::DOCK_CONTROL_KIND.into(),
+            data: String::new(),
+        }),
     }
 }
 
@@ -116,6 +127,12 @@ fn push_target_event(
             }
             outcome.requests.push(target_event_message(
                 ClientInputTarget::Popup(terminal_id),
+                event,
+            ));
+        }
+        ClientInputTarget::Dock(pane_id) => {
+            outcome.requests.push(target_event_message(
+                ClientInputTarget::Dock(pane_id),
                 event,
             ));
         }
