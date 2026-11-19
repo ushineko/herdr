@@ -1,0 +1,38 @@
+# ushineko/herdr — a personal herdr fork
+
+This is a personal fork of [herdr](https://github.com/herdrdev/herdr) that
+carries a few local features on top of herdr releases.
+
+**It is not affiliated with the herdr project.** Do not report problems with
+these patches upstream, and do not open issues or pull requests against
+herdrdev/herdr on their behalf: herdr does not accept unsolicited pull requests
+(see its `CONTRIBUTING.md`). Everything here is published in case it is useful
+to someone, with no support promise.
+
+## Features
+
+| Feature | Branch | Spec | Status |
+| --- | --- | --- | --- |
+| Horizontal spaces bar: spaces in a two-row bar across the top instead of the left rail, with folded agent status per space | `ushineko/spaces-bar` | [000](specs/000-spaces-bar.md) | Complete |
+| Dock: a pane area along the bottom that belongs to no workspace and shows in every one | `ushineko/dock` | [001](specs/001-dock.md) | Complete |
+| Nested tabs: several panes in one layout slot behind a tab strip | `ushineko/pane-stacks` | [002](specs/002-nested-tabs.md) | Draft spec |
+
+Each feature is a branch stacked on the one before it and reviewed as a pull
+request inside this fork. `ushineko/features` is the integration branch that
+builds are made from.
+
+## Base
+
+herdr **v0.9.5**. Build tags are `ushineko-v<herdr version>.<n>`, for example
+`ushineko-v0.9.5.1`.
+
+## Compatibility
+
+All patches keep herdr's stable endpoint contract (generation 1). New
+behaviour is negotiated through endpoint capabilities and named controls, the
+saved-session version is unchanged, and frozen wire messages are not touched.
+A build from this fork interoperates with stock herdr clients and servers, and
+rolling back to stock herdr keeps your sessions.
+
+See [MAINTAINING.md](MAINTAINING.md) for the branch model, how the patches
+are carried across herdr releases, and how to build and validate.
