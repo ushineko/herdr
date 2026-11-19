@@ -572,8 +572,10 @@ deliberate breakages, each caught once two test gaps were closed
 
 - Stacking an existing neighbouring pane into a slot, or unstacking a pane
   back into its own split.
-- A CLI or API to build stacks. As a result, scripts such as the panel script
-  cannot set up a stack. This is the most likely follow-up.
+- ~~A CLI or API to build stacks.~~ Added 2026-11-19 for the panel script:
+  `pane.stack` / `herdr pane stack <pane> [--cwd] [--label] [--hidden]
+  [--focus]` starts a shell as a new member of the pane's slot. Folding an
+  existing pane into a stack is still not supported.
 - Dragging stacked panes between slots, or reordering them within a strip.
 - Names for stacked panes separate from pane names (the strip uses the pane
   label).

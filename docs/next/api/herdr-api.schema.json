@@ -3298,6 +3298,43 @@
           ],
           "type": "object"
         },
+        "PaneStackParams": {
+          "description": "Local patch (spec 002): start a shell as a new nested tab (stack member)\nin a pane's slot.",
+          "properties": {
+            "cwd": {
+              "description": "Working directory; the target pane's if omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "focus": {
+              "default": false,
+              "description": "Focus the new member (implies `show`).",
+              "type": "boolean"
+            },
+            "label": {
+              "description": "Label for the new pane.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "show": {
+              "default": true,
+              "description": "Show the new member (default). When false it is added hidden and the\nslot keeps showing what it showed.",
+              "type": "boolean"
+            },
+            "target_pane_id": {
+              "description": "The pane whose slot gets the new member; the focused pane if omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "PaneSwapParams": {
           "properties": {
             "direction": {
@@ -5477,6 +5514,23 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PaneSplitParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Local patch (spec 002).",
+          "properties": {
+            "method": {
+              "const": "pane.stack",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneStackParams"
             }
           },
           "required": [

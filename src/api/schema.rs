@@ -141,6 +141,9 @@ pub enum Method {
     AgentWait(AgentWaitParams),
     #[serde(rename = "pane.split")]
     PaneSplit(PaneSplitParams),
+    /// Local patch (spec 002).
+    #[serde(rename = "pane.stack")]
+    PaneStack(PaneStackParams),
     #[serde(rename = "pane.swap")]
     PaneSwap(PaneSwapParams),
     #[serde(rename = "pane.move")]

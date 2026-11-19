@@ -34,6 +34,28 @@ pub struct PaneSplitParams {
     pub env: HashMap<String, String>,
 }
 
+/// Local patch (spec 002): start a shell as a new nested tab (stack member)
+/// in a pane's slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneStackParams {
+    /// The pane whose slot gets the new member; the focused pane if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_pane_id: Option<String>,
+    /// Working directory; the target pane's if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Label for the new pane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Show the new member (default). When false it is added hidden and the
+    /// slot keeps showing what it showed.
+    #[serde(default = "super::default_true")]
+    pub show: bool,
+    /// Focus the new member (implies `show`).
+    #[serde(default)]
+    pub focus: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneInputSetParams {
     pub pane_id: String,

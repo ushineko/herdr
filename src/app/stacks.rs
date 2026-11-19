@@ -5,12 +5,40 @@ use crate::layout::PaneId;
 
 use super::App;
 
+/// How `stack_new_pane_with` adds a member.
+pub(crate) struct StackNewOptions {
+    pub cwd: Option<std::path::PathBuf>,
+    pub label: Option<String>,
+    pub show: bool,
+    pub focus: bool,
+}
+
 impl App {
     /// Start a shell as a new member of `target`'s slot, shown and focused.
     pub(crate) fn stack_new_pane(
         &mut self,
         ws_idx: usize,
         target: PaneId,
+    ) -> Result<PaneId, String> {
+        self.stack_new_pane_with(
+            ws_idx,
+            target,
+            StackNewOptions {
+                cwd: None,
+                label: None,
+                show: true,
+                focus: true,
+            },
+        )
+    }
+
+    /// Start a shell as a new member of `target`'s slot. Without `show` the
+    /// slot keeps showing what it showed; without `focus` focus stays put.
+    pub(crate) fn stack_new_pane_with(
+        &mut self,
+        ws_idx: usize,
+        target: PaneId,
+        options: StackNewOptions,
     ) -> Result<PaneId, String> {
         let slot = self
             .state
@@ -22,8 +50,19 @@ impl App {
         let (rows, cols) = self
             .state
             .new_pane_size(crate::ui::NewPanePlacement::Existing { ws_idx, pane: slot });
-        let follow_cwd = self.launch_cwd_for_pane_in_workspace(ws_idx, slot);
-        let cwd = Some(self.resolve_new_terminal_cwd(follow_cwd));
+        let cwd = Some(match options.cwd {
+            Some(cwd) => cwd,
+            None => {
+                let follow_cwd = self.launch_cwd_for_pane_in_workspace(ws_idx, slot);
+                self.resolve_new_terminal_cwd(follow_cwd)
+            }
+        });
+        let previous_leaf_focus = self
+            .state
+            .workspaces
+            .get(ws_idx)
+            .and_then(|ws| ws.tabs.get(ws.find_tab_index_for_pane(slot)?))
+            .map(|tab| tab.layout.focused());
         let default_shell = self.state.default_shell.clone();
         let scrollback_limit_bytes = self.state.pane_scrollback_limit_bytes;
         let host_terminal_theme = self.state.host_terminal_theme;
@@ -51,16 +90,38 @@ impl App {
             None => return Err("pane not found".to_string()),
         };
         let pane_id = new_pane.pane_id;
-        self.state.switch_workspace_tab(ws_idx, tab_idx);
-        self.state
-            .record_pane_focus_change(previous_focus, ws_idx, pane_id);
-        self.state.mode = crate::app::Mode::Terminal;
+        let tab = &mut self.state.workspaces[ws_idx].tabs[tab_idx];
+        if options.focus {
+            // Shown and focused by `stack_pane_shell`.
+        } else {
+            if !options.show {
+                tab.reveal_pane(slot);
+            }
+            if let Some(previous) = previous_leaf_focus {
+                let previous = if previous == slot && options.show {
+                    pane_id
+                } else {
+                    previous
+                };
+                tab.layout.focus_pane(previous);
+            }
+        }
+        if options.focus {
+            self.state.switch_workspace_tab(ws_idx, tab_idx);
+            self.state
+                .record_pane_focus_change(previous_focus, ws_idx, pane_id);
+            self.state.mode = crate::app::Mode::Terminal;
+        }
         self.terminal_runtimes
             .insert(new_pane.terminal.id.clone(), new_pane.runtime);
         self.state.remove_alias_shadowed_by_new_pane(pane_id);
-        self.state
-            .terminals
-            .insert(new_pane.terminal.id.clone(), new_pane.terminal);
+        let mut terminal = new_pane.terminal;
+        if let Some(label) = options.label.map(|label| label.trim().to_string()) {
+            if !label.is_empty() {
+                terminal.set_manual_label(label);
+            }
+        }
+        self.state.terminals.insert(terminal.id.clone(), terminal);
         tracing::info!(pane = pane_id.raw(), slot = slot.raw(), "stack: new pane");
         if let Some(pane) = self.pane_info(ws_idx, pane_id) {
             self.emit_event(EventEnvelope {
@@ -70,6 +131,40 @@ impl App {
         }
         self.stack_layout_changed(ws_idx, tab_idx);
         Ok(pane_id)
+    }
+
+    /// `pane.stack`: a new nested tab in a pane's slot.
+    pub(super) fn handle_pane_stack(
+        &mut self,
+        id: String,
+        params: crate::api::schema::PaneStackParams,
+    ) -> String {
+        use super::api::responses::{encode_error, encode_success};
+        let target = match params.target_pane_id.as_deref() {
+            Some(pane_id) => self.parse_pane_id(pane_id),
+            None => self.state.active.and_then(|ws_idx| {
+                let pane = self.state.workspaces.get(ws_idx)?.focused_pane_id()?;
+                Some((ws_idx, pane))
+            }),
+        };
+        let Some((ws_idx, target)) = target else {
+            return encode_error(id, "pane_not_found", "pane not found");
+        };
+        let options = StackNewOptions {
+            cwd: params.cwd.map(std::path::PathBuf::from),
+            label: params.label,
+            show: params.show || params.focus,
+            focus: params.focus,
+        };
+        match self.stack_new_pane_with(ws_idx, target, options) {
+            Ok(pane_id) => match self.pane_info(ws_idx, pane_id) {
+                Some(pane) => {
+                    encode_success(id, crate::api::schema::ResponseResult::PaneInfo { pane })
+                }
+                None => encode_error(id, "pane_not_found", "new pane is unavailable"),
+            },
+            Err(err) => encode_error(id, "pane_stack_failed", err),
+        }
     }
 
     /// Show a stack member and focus it, as a strip click or a jump does.

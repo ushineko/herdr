@@ -30,6 +30,7 @@ pub(super) fn run_pane_command(args: &[String]) -> std::io::Result<i32> {
         "rename" => pane_rename(&args[1..]),
         "input" => pane_input(&args[1..]),
         "split" => pane_split(&args[1..]),
+        "stack" => pane_stack(&args[1..]),
         "swap" => pane_swap(&args[1..]),
         "move" => pane_move(&args[1..]),
         "close" => pane_close(&args[1..]),
@@ -612,6 +613,80 @@ fn parse_right_click_target(value: &str) -> Result<PaneRightClickTarget, String>
         "pane" => Ok(PaneRightClickTarget::Pane),
         _ => Err(format!("invalid right-click target: {value}")),
     }
+}
+
+/// Local patch (spec 002): `herdr pane stack`.
+const PANE_STACK_USAGE: &str = "usage: herdr pane stack [<pane_id>|--pane ID|--current] [--cwd PATH] [--label TEXT] [--hidden] [--focus]";
+
+fn pane_stack(args: &[String]) -> std::io::Result<i32> {
+    let env_pane_id = super::target::caller_pane_id();
+    match parse_pane_stack_args(args, env_pane_id.as_deref()) {
+        Ok(params) => super::runtime::pane_stack(params),
+        Err(message) => {
+            eprintln!("{message}");
+            Ok(2)
+        }
+    }
+}
+
+fn parse_pane_stack_args(
+    args: &[String],
+    env_pane_id: Option<&str>,
+) -> Result<crate::api::schema::PaneStackParams, String> {
+    let mut params = crate::api::schema::PaneStackParams {
+        target_pane_id: env_pane_id.map(super::normalize_pane_id),
+        cwd: None,
+        label: None,
+        show: true,
+        focus: false,
+    };
+    let mut index = 0;
+    if args.first().is_some_and(|arg| !arg.starts_with("--")) {
+        params.target_pane_id = args.first().map(|arg| super::normalize_pane_id(arg));
+        index = 1;
+    }
+    while index < args.len() {
+        let value = |index: usize| {
+            args.get(index + 1)
+                .cloned()
+                .ok_or_else(|| format!("missing value for {}\n{PANE_STACK_USAGE}", args[index]))
+        };
+        match args[index].as_str() {
+            "--pane" => {
+                params.target_pane_id = Some(super::normalize_pane_id(&value(index)?));
+                index += 2;
+            }
+            "--current" => {
+                params.target_pane_id = Some(
+                    env_pane_id
+                        .map(super::normalize_pane_id)
+                        .ok_or("--current requires HERDR_PANE_ID")?,
+                );
+                index += 1;
+            }
+            "--cwd" => {
+                params.cwd = Some(value(index)?);
+                index += 2;
+            }
+            "--label" => {
+                params.label = Some(value(index)?);
+                index += 2;
+            }
+            "--hidden" => {
+                params.show = false;
+                index += 1;
+            }
+            "--focus" => {
+                params.focus = true;
+                index += 1;
+            }
+            other => return Err(format!("unknown option: {other}\n{PANE_STACK_USAGE}")),
+        }
+    }
+    if params.focus && !params.show {
+        return Err(format!("--focus and --hidden conflict\n{PANE_STACK_USAGE}"));
+    }
+    Ok(params)
 }
 
 fn pane_split(args: &[String]) -> std::io::Result<i32> {
@@ -1689,6 +1764,9 @@ fn print_pane_help() {
     eprintln!(
         "  herdr pane split [<pane_id>|--pane ID|--current] --direction right|down [--ratio FLOAT] [--cwd PATH] [--env KEY=VALUE] [--right-click herdr|pane] [--focus] [--no-focus]"
     );
+    eprintln!(
+        "  herdr pane stack [<pane_id>|--pane ID|--current] [--cwd PATH] [--label TEXT] [--hidden] [--focus]"
+    );
     eprintln!("  herdr pane swap --direction left|right|up|down [--pane ID|--current]");
     eprintln!("  herdr pane swap --source-pane ID --target-pane ID");
     eprintln!("  herdr pane move <pane_id> --tab <tab_id> --split right|down [--target-pane ID] [--ratio FLOAT] [--focus|--no-focus]");
@@ -1707,6 +1785,36 @@ fn print_pane_help() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pane_stack_args_parse_target_label_hidden_and_focus() {
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        let params = super::parse_pane_stack_args(
+            &args(&[
+                "w1-3",
+                "--label",
+                "panel:lazygit",
+                "--hidden",
+                "--cwd",
+                "/tmp",
+            ]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(params.target_pane_id.as_deref(), Some("w1-3"));
+        assert_eq!(params.label.as_deref(), Some("panel:lazygit"));
+        assert_eq!(params.cwd.as_deref(), Some("/tmp"));
+        assert!(!params.show && !params.focus);
+        let params = super::parse_pane_stack_args(&args(&["--focus"]), Some("w2-1")).unwrap();
+        assert_eq!(
+            params.target_pane_id.as_deref(),
+            Some("w2-1"),
+            "defaults to the caller"
+        );
+        assert!(params.show && params.focus);
+        assert!(super::parse_pane_stack_args(&args(&["--hidden", "--focus"]), None).is_err());
+        assert!(super::parse_pane_stack_args(&args(&["--bogus"]), None).is_err());
+    }
+
     use super::*;
 
     fn args(values: &[&str]) -> Vec<String> {

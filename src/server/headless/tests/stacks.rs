@@ -625,3 +625,69 @@ async fn moving_a_stack_into_another_workspaces_tab_numbers_every_member() {
     server.app.state.workspaces[0].assert_invariants_for_test();
     shutdown_test_runtimes(&mut server);
 }
+
+#[tokio::test]
+async fn pane_stack_adds_a_labelled_member_hidden_or_shown_without_stealing_focus() {
+    let Stacked {
+        mut server, left, ..
+    } = stacked_server();
+    server.app.state.workspaces[0].tabs[0]
+        .layout
+        .focus_pane(left);
+    let left_id = public(&server, left);
+    let response = api_call(
+        &mut server,
+        "pane.stack",
+        serde_json::json!({"target_pane_id": left_id, "label": "panel:lazygit", "show": false}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    assert_eq!(response["result"]["pane"]["label"], "panel:lazygit");
+    assert_eq!(response["result"]["pane"]["stack"]["visible"], false);
+    let tab = &server.app.state.workspaces[0].tabs[0];
+    assert!(
+        !tab.is_hidden_pane(left),
+        "hidden: the slot keeps showing the target"
+    );
+    assert_eq!(tab.layout.focused(), left, "and focus stays");
+    let hidden_new = tab.stack_of(left).unwrap().panes[1];
+    assert!(tab.is_hidden_pane(hidden_new));
+
+    let response = api_call(
+        &mut server,
+        "pane.stack",
+        serde_json::json!({"target_pane_id": left_id}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    let tab = &server.app.state.workspaces[0].tabs[0];
+    let shown_new = tab.stack_of(left).unwrap().panes[2];
+    assert!(!tab.is_hidden_pane(shown_new), "shown by default");
+    assert_eq!(
+        tab.layout.focused(),
+        shown_new,
+        "focus follows the slot it was on"
+    );
+
+    // Stacking onto a slot that is not focused leaves focus where it is.
+    let other_leaf = tab
+        .layout
+        .pane_ids()
+        .into_iter()
+        .find(|id| *id != shown_new)
+        .unwrap();
+    server.app.state.workspaces[0].tabs[0]
+        .layout
+        .focus_pane(other_leaf);
+    let response = api_call(
+        &mut server,
+        "pane.stack",
+        serde_json::json!({"target_pane_id": left_id}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+    assert_eq!(
+        server.app.state.workspaces[0].tabs[0].layout.focused(),
+        other_leaf,
+        "a script stacking elsewhere does not move the user's focus"
+    );
+    server.app.state.workspaces[0].assert_invariants_for_test();
+    shutdown_test_runtimes(&mut server);
+}
